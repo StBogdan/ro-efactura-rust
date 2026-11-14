@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-and-lint:
+    name: Test, Clippy & Docs (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown, x86_64-unknown-linux-musl
+      - name: Install xmllint & musl-tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils musl-tools
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy (all targets)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Workspace unit, property, golden & doctests
+        run: cargo test --workspace --all-features
+      - name: Check no_std cius-ro-id
+        run: cargo check -p cius-ro-id --no-default-features
+      - name: Check minimal cius-ro (no default features)
+        run: cargo check -p cius-ro --no-default-features
+      - name: Build browser WebAssembly target (wasm32-unknown-unknown)
+        run: cargo build --target wasm32-unknown-unknown -p cius-ro-id -p cius-ro-wasm --release
+      - name: Build static Linux musl CLI binary
+        run: cargo build --target x86_64-unknown-linux-musl -p cius-ro-cli --release
+      - name: Build Rustdoc with warnings denied
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --all-features --no-deps

@@ -1,0 +1,29 @@
+[package]
+name = "cius-ro-id"
+description = "no_std-compatible Romanian fiscal, legal, banking, and geographic identifiers (CUI/CIF, CNP + ANAF B2C placeholder, ONRC, RO IBAN, ISO 3166-2:RO & Bucharest sectors)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["romania", "cui", "cnp", "efactura", "anaf"]
+categories = ["parser-implementations", "localization", "no-std", "finance"]
+
+[features]
+default = ["std"]
+std = ["thiserror/std"]
+serde = ["dep:serde", "iban_validate/serde"]
+
+[dependencies]
+thiserror.workspace = true
+time.workspace = true
+iban_validate.workspace = true
+deunicode.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true

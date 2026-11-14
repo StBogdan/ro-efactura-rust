@@ -1,0 +1,40 @@
+[package]
+name = "cius-ro"
+description = "Pure-Rust ANAF RO e-Factura (CIUS-RO 1.0.1) e-invoice validator: EN 16931 fixed-point model, complete BR-RO-* rules, UBL 2.1 / CII D16B XSD, and hybrid efactura.xml PDF/A-3 inspection"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["efactura", "cius-ro", "anaf", "en16931", "ubl"]
+categories = ["parser-implementations", "encoding", "finance", "localization"]
+
+[features]
+default = ["xsd", "pdfa3", "serde"]
+xsd = ["dep:uppsala"]
+pdfa3 = ["dep:lopdf", "dep:ttf-parser", "en16931-formats/zugferd"]
+wasm-js = ["lopdf?/wasm_js"]
+serde = ["dep:serde", "cius-ro-id/serde", "en16931/serde", "en16931-formats/serde"]
+svrl = ["en16931/svrl"]
+
+[dependencies]
+cius-ro-id = { workspace = true, features = ["std"] }
+en16931.workspace = true
+en16931-formats.workspace = true
+roxmltree.workspace = true
+
+uppsala = { workspace = true, optional = true }
+lopdf = { workspace = true, optional = true }
+ttf-parser = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+tempfile.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+lopdf = { workspace = true }
+ttf-parser = { workspace = true }

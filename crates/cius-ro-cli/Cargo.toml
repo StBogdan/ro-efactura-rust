@@ -1,0 +1,25 @@
+[package]
+name = "cius-ro-cli"
+description = "Command-line validator and PDF/A-3 extractor for Romanian ANAF RO e-Factura (CIUS-RO 1.0.1) e-invoices and fiscal identifiers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["efactura", "cius-ro", "anaf", "cli", "einvoicing"]
+categories = ["command-line-utilities", "finance"]
+
+[[bin]]
+name = "cius-ro"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+cius-ro = { workspace = true, features = ["xsd", "pdfa3", "serde", "svrl"] }
+cius-ro-id = { workspace = true, features = ["std", "serde"] }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
