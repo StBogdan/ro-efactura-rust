@@ -11,13 +11,15 @@ Built for Romania's national B2B, B2G, and B2C e-invoicing system (*OUG 120/2021
 | Crate | Description | `no_std` | `wasm32` |
 | :--- | :--- | :---: | :---: |
 | [`cius-ro-id`](./crates/cius-ro-id) | Parse and verify Romanian CUI/CIF, CNP, ONRC, IBAN, counties, and Bucharest sectors (`no_std` compatible). | Yes | Yes |
-| [`cius-ro`](./crates/cius-ro) | Full `CIUS-RO 1.0.1` validator for standalone XML (`UBL 2.1`, `CII D16B`) and hybrid `PDF/A-3` invoices. | — | Yes |
+| [`cius-ro`](./crates/cius-ro) | Full `CIUS-RO 1.0.1` validator for standalone XML (`UBL 2.1`, `CII D16B`) and hybrid `PDF/A-3` invoices. | — | Yes¹ |
 | [`cius-ro-cli`](./crates/cius-ro-cli) | Command-line tool (`cius-ro`) for CI/CD checks, ERP pre-flight validation, and PDF XML extraction. | — | — |
-| [`cius-ro-wasm`](./crates/cius-ro-wasm) | WebAssembly bindings for running the validator in browsers, Edge Workers, Deno, and Node.js. | — | Yes |
+| [`cius-ro-wasm`](./crates/cius-ro-wasm) | WebAssembly bindings for running the validator in browsers, Edge Workers, Deno, and Node.js. | — | Yes¹ |
+
+¹ *On `wasm32-unknown-unknown`, XML well-formedness, `<!DOCTYPE` / `<!ENTITY` XXE blocking, `EN 16931`, `BR-RO-*`, `cius-ro-id`, and `PDF/A-3` checks run in memory; multi-file XSD compilation (which uses a one-time ephemeral temporary directory on native targets) is marked `SKIPPED`.*
 
 ## Highlights
 
-- **Self-contained & fast:** Written in 100% safe Rust (`#![forbid(unsafe_code)]`) with bundled XSD schemas. No Java runtime, Saxon-HE, or `xmllint` installation required.
+- **Self-contained & fast:** Written in 100% safe Rust (`#![forbid(unsafe_code)]`, Edition 2024) with bundled XSD schemas, zero-heap-allocation `Copy` identifier types (`Cui`, `Cnp`, `CnpOrPlaceholder`, `Onrc`), and bounded PDF stream decompression. No Java runtime, Saxon-HE, or `xmllint` installation required.
 - **Exact financial arithmetic:** Line totals, allowances/charges, VAT breakdowns (`BG-23`), and payable amounts (`BG-22`) are checked in base-10 fixed-point (`rust_decimal`), avoiding floating-point rounding drift.
 - **Full ANAF `ROeFactura v1.0.9` rule set:** Covers all 122 official `BR-RO-*` rules — including strict timezone-free dates (`YYYY-MM-DD`), RON tax-currency rules on foreign-currency invoices, 2-decimal monetary caps (`BR-RO-Z2`), field length limits, and attachment cardinality caps.
 - **Bilingual diagnostics (`en` & `ro`) with fix hints:** Every error and warning is available in English and Romanian, with automatic suggestions for common mistakes (for example, `"Cluj"` -> `"RO-CJ"` or `"Sector 1"` -> `"SECTOR1"`).
@@ -37,7 +39,8 @@ use cius_ro::{validate_bytes, Locale, ValidateOptions};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Accepts standalone XML (UBL 2.1 / CII D16B) or a hybrid PDF/A-3 file
     let bytes = std::fs::read("invoice.xml")?;
-    let report = validate_bytes(&bytes, &ValidateOptions::with_locale(Locale::Ro));
+    let opts = ValidateOptions::with_locale(Locale::Ro).deny_warnings(true);
+    let report = validate_bytes(&bytes, &opts);
 
     if report.is_valid {
         println!("Valid CIUS-RO invoice ({:?})", report.detected_syntax);
@@ -126,7 +129,7 @@ console.log(idCheck.isValid, idCheck.normalized);
 
 ## How Validation Works
 
-`cius-ro` runs inputs through four stages in memory:
+`cius-ro` runs inputs through four validation stages:
 
 ```text
 Input bytes (&[u8]: XML or %PDF-)

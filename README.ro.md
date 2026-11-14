@@ -11,13 +11,15 @@ Construită conform regulilor naționale B2B, B2G și B2C (*OUG 120/2021*, *Lege
 | Crate | Descriere | `no_std` | `wasm32` |
 | :--- | :--- | :---: | :---: |
 | [`cius-ro-id`](./crates/cius-ro-id/README.ro.md) | Parsare și validare pentru CUI/CIF, CNP, nr. Reg. Com. (ONRC), IBAN RO, județe și sectoare București (compatibil `no_std`). | Da | Da |
-| [`cius-ro`](./crates/cius-ro/README.ro.md) | Validator complet `CIUS-RO 1.0.1` pentru fișiere XML (`UBL 2.1`, `CII D16B`) și PDF-uri hibride `PDF/A-3`. | — | Da |
+| [`cius-ro`](./crates/cius-ro/README.ro.md) | Validator complet `CIUS-RO 1.0.1` pentru fișiere XML (`UBL 2.1`, `CII D16B`) și PDF-uri hibride `PDF/A-3`. | — | Da¹ |
 | [`cius-ro-cli`](./crates/cius-ro-cli/README.ro.md) | Utilitar în linie de comandă (`cius-ro`) pentru verificări înainte de încărcarea în SPV, CI/CD și extragerea XML din PDF. | — | — |
-| [`cius-ro-wasm`](./crates/cius-ro-wasm/README.ro.md) | Pachet WebAssembly pentru rularea validatorului direct în browser, Cloudflare Workers, Deno sau Node.js. | — | Da |
+| [`cius-ro-wasm`](./crates/cius-ro-wasm/README.ro.md) | Pachet WebAssembly pentru rularea validatorului direct în browser, Cloudflare Workers, Deno sau Node.js. | — | Da¹ |
+
+¹ *Pe `wasm32-unknown-unknown`, sintaxa XML, protecția XXE (`<!DOCTYPE` / `<!ENTITY`), modelul `EN 16931`, regulile `BR-RO-*`, `cius-ro-id` și inspecția `PDF/A-3` rulează în memorie; compilarea schemelor XSD multi-fișier (care folosește un director temporar efemer la inițializare pe platforme native) este marcată `SKIPPED`.*
 
 ## De ce `ro-efactura`?
 
-- **Fără Java / JVM sau utilitare externe:** Scris integral în Rust fără cod `unsafe` (`#![forbid(unsafe_code)]`), cu schemele XSD incluse direct în binarul compilat. Nu necesită Saxon-HE sau `xmllint`.
+- **Fără Java / JVM sau utilitare externe:** Scris integral în Rust fără cod `unsafe` (`#![forbid(unsafe_code)]`, Edition 2024), cu schemele XSD incluse în binarul compilat, tipuri `Copy` fără alocare pe heap pentru identificatori (`Cui`, `Cnp`, `CnpOrPlaceholder`, `Onrc`) și decomprimare PDF limitată împotriva arhivelor supradimensionate. Nu necesită Saxon-HE sau `xmllint`.
 - **Calcule financiare exacte în baza 10:** Liniile facturii, reducerile/taxele suplimentare, defalcarea TVA (`BG-23`) și totalurile de plată (`BG-22`) sunt verificate cu `rust_decimal`, evitând diferențele de rotunjire la nivel de ban specifice numerelor `f64`.
 - **Toate regulile oficiale ANAF `ROeFactura v1.0.9`:** Acoperă cele 122 de reguli `BR-RO-*` — inclusiv datele calendaristice fără fus orar (`YYYY-MM-DD`), TVA-ul exprimat în `RON` pentru facturile în valută, plafonul de 2 zecimale pe sumele monetare (`BR-RO-Z2`), lungimile maxime de câmpuri și numărul maxim de atașamente.
 - **Mesaje clare în română și engleză, cu sugestii de corectare:** Semnalează greșelile frecvente înainte de transmiterea în SPV ANAF și propune automat forma corectă (de exemplu, `'RO-CJ'` în loc de `'Cluj'` sau `'SECTOR1'` în loc de `'Sectorul 1'`).
@@ -37,7 +39,8 @@ use cius_ro::{validate_bytes, Locale, ValidateOptions};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Acceptă direct atât fișiere XML (UBL 2.1 / CII D16B), cât și PDF/A-3 hibrid
     let octeti = std::fs::read("factura.xml")?;
-    let raport = validate_bytes(&octeti, &ValidateOptions::with_locale(Locale::Ro));
+    let optiuni = ValidateOptions::with_locale(Locale::Ro).deny_warnings(true);
+    let raport = validate_bytes(&octeti, &optiuni);
 
     if raport.is_valid {
         println!("Factură validă CIUS-RO 1.0.1 ({:?})", raport.detected_syntax);
@@ -126,7 +129,7 @@ console.log(verificare.isValid, verificare.normalized);
 
 ## Etapele de validare
 
-`cius-ro` parcurge 4 etape direct în memorie:
+`cius-ro` parcurge 4 etape de validare:
 
 ```text
 Octeți de intrare (&[u8]: XML sau %PDF-)
