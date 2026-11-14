@@ -12,6 +12,12 @@ readme = "README.md"
 keywords = ["efactura", "cius-ro", "wasm", "webassembly", "anaf"]
 categories = ["wasm", "finance", "parser-implementations"]
 
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -21,3 +27,6 @@ cius-ro-id = { workspace = true, features = ["std", "serde"] }
 wasm-bindgen.workspace = true
 serde.workspace = true
 serde-wasm-bindgen.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

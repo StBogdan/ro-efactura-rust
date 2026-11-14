@@ -76,6 +76,12 @@ fn cli_check_invalid_invoice_exits_one_in_json_svrl_and_sarif() {
                     serde_json::from_str(&stdout).expect("valid SARIF v2.1.0 JSON");
                 assert_eq!(v["version"], "2.1.0");
                 assert!(!v["runs"][0]["results"].as_array().unwrap().is_empty());
+                assert!(
+                    !v["runs"][0]["tool"]["driver"]["rules"]
+                        .as_array()
+                        .unwrap()
+                        .is_empty()
+                );
             }
             _ => unreachable!(),
         }
@@ -146,7 +152,7 @@ fn cli_extract_id_and_rules_subcommands() {
     let fuzzy_json: serde_json::Value = serde_json::from_slice(&id_fuzzy.stdout).unwrap();
     assert_eq!(fuzzy_json["normalized"], "SECTOR3");
 
-    // 3. rules subcommand
+    // 3. rules subcommand (canonical code + ANAF Schematron sub-ID resolution)
     let rule_out = Command::new(bin_path())
         .args(["rules", "BR-RO-Z2", "--json", "--lang", "ro"])
         .output()
@@ -154,4 +160,12 @@ fn cli_extract_id_and_rules_subcommands() {
     assert!(rule_out.status.success());
     let rule_json: serde_json::Value = serde_json::from_slice(&rule_out.stdout).unwrap();
     assert_eq!(rule_json["code"], "BR-RO-Z2");
+
+    let sub_rule_out = Command::new(bin_path())
+        .args(["rules", "BR-DEC-RO-05", "--json", "--lang", "en"])
+        .output()
+        .expect("spawn rules sub-id");
+    assert!(sub_rule_out.status.success());
+    let sub_rule_json: serde_json::Value = serde_json::from_slice(&sub_rule_out.stdout).unwrap();
+    assert_eq!(sub_rule_json["code"], "BR-RO-Z2");
 }

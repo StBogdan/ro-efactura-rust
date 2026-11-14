@@ -14,10 +14,14 @@ wasm-pack build crates/cius-ro-wasm --target web --release
 
 ## JavaScript / TypeScript API
 
+Generated `pkg/cius_ro_wasm.d.ts` bundles ship strict TypeScript interfaces (`ValidationReport`, `Violation`, `EngineReport`, `IdentifierInspection`, `RuleView`, `Locale`, `Severity`, etc.).
+
 - `validateInvoice(bytes: Uint8Array, locale?: "en" | "ro", denyWarnings?: boolean, includeSvrl?: boolean): ValidationReport`
 - `extractPdfXml(bytes: Uint8Array): Uint8Array`
 - `validateIdentifier(input: string, locale?: "en" | "ro"): IdentifierInspection`
 - `listRules(locale?: "en" | "ro"): RuleView[]`
+
+> **Note:** On `wasm32-unknown-unknown`, XML well-formedness, `<!DOCTYPE` / `<!ENTITY` XXE blocking, CEN EN 16931 element-order and fixed-point decimal math, all 122 ANAF `BR-RO-*` assertions, `cius-ro-id` checksums, and ISO 19005-3 `PDF/A-3` container checks run in memory; multi-file filesystem XSD compilation is marked `"SKIPPED"`.
 
 ```js
 import init, {

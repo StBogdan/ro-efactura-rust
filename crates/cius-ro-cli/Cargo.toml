@@ -12,6 +12,9 @@ readme = "README.md"
 keywords = ["efactura", "cius-ro", "anaf", "cli", "einvoicing"]
 categories = ["command-line-utilities", "finance"]
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "cius-ro"
 path = "src/main.rs"

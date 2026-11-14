@@ -1,9 +1,8 @@
 //! Command-line validator, PDF/A-3 extractor, and Romanian identifier inspector for
 //! ANAF `RO e-Factura` (`CIUS-RO 1.0.1`).
 
-#![forbid(unsafe_code)]
-
-use std::fs;
+use std::collections::BTreeSet;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -12,16 +11,19 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
 use cius_ro::{
-    extract_xml_from_pdf, find_rule, render_rules_markdown, render_svrl_report, validate_bytes,
-    Locale, RuleView, Severity, ValidateOptions, ValidationReport, RULES,
+    Locale, RULES, RuleView, Severity, ValidateOptions, ValidationReport, extract_xml_from_pdf,
+    find_rule, render_rules_markdown, render_svrl_report, validate_bytes,
 };
 use cius_ro_id::inspect_identifier;
+
+/// Maximum input payload accepted from a file or `stdin` (`128 MiB`).
+const MAX_CLI_INPUT_BYTES: u64 = 128 * 1024 * 1024;
 
 #[derive(Parser, Debug)]
 #[command(
     name = "cius-ro",
     version,
-    about = "Pure-Rust ANAF RO e-Factura (CIUS-RO 1.0.1) validator, PDF/A-3 extractor & Romanian fiscal ID inspector",
+    about = "ANAF RO e-Factura (CIUS-RO 1.0.1) validator, PDF/A-3 extractor & Romanian fiscal ID inspector",
     long_about = "Validate standalone UBL 2.1 / UN-CEFACT CII D16B XML invoices and hybrid PDF/A-3 (efactura.xml) documents against W3C XSD 1.1, CEN EN 16931 fixed-point math, all 122 ANAF CIUS-RO 1.0.1 (BR-RO-*) assertions, and Romanian CUI / CNP / ONRC / IBAN checksums."
 )]
 struct Cli {
@@ -84,7 +86,7 @@ enum Commands {
 
     /// Browse or look up `CIUS-RO 1.0.1` (`BR-RO-*`) and `cius-ro-id` validation rules
     Rules {
-        /// Optional rule code or sub-ID to inspect (e.g. `BR-RO-110`, `BR-RO-Z2`, `BR-RO-CUI`)
+        /// Optional rule code or sub-ID to inspect (e.g. `BR-RO-110`, `BR-DEC-RO-05`, `BR-RO-CUI`)
         code: Option<String>,
 
         /// Documentation language (`en` or `ro`)
@@ -138,14 +140,30 @@ fn main() -> ExitCode {
     }
 }
 
+fn read_bounded<R: Read>(reader: R) -> io::Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    reader.take(MAX_CLI_INPUT_BYTES + 1).read_to_end(&mut buf)?;
+    if u64::try_from(buf.len()).is_ok_and(|len| len > MAX_CLI_INPUT_BYTES) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "input exceeds 128 MiB maximum size limit",
+        ));
+    }
+    Ok(buf)
+}
+
 fn read_input(path: &Path) -> io::Result<Vec<u8>> {
     if path == Path::new("-") {
-        let mut buf = Vec::new();
-        io::stdin().read_to_end(&mut buf)?;
-        Ok(buf)
-    } else {
-        fs::read(path)
+        return read_bounded(io::stdin().lock());
     }
+    let meta = fs::metadata(path)?;
+    if meta.is_file() && meta.len() > MAX_CLI_INPUT_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "file exceeds 128 MiB maximum size limit",
+        ));
+    }
+    read_bounded(File::open(path)?)
 }
 
 fn print_json<T: Serialize>(value: &T) -> Result<(), ExitCode> {
@@ -186,10 +204,12 @@ fn cmd_check(
     let mut results = Vec::with_capacity(paths.len());
     for p in paths {
         let display = p.display().to_string();
-        let Ok(bytes) =
-            read_input(p).map_err(|err| eprintln!("cius-ro: failed to read '{display}': {err}"))
-        else {
-            return ExitCode::from(2);
+        let bytes = match read_input(p) {
+            Ok(b) => b,
+            Err(err) => {
+                eprintln!("cius-ro: failed to read '{display}': {err}");
+                return ExitCode::from(2);
+            }
         };
         results.push((display, validate_bytes(&bytes, &opts)));
     }
@@ -221,15 +241,15 @@ fn cmd_check(
         }
         OutputFormat::Svrl => {
             for (_, rep) in &results {
-                let svrl = rep
-                    .svrl_xml
-                    .clone()
-                    .unwrap_or_else(|| render_svrl_report(&rep.violations));
-                print!("{svrl}");
+                if let Some(svrl) = &rep.svrl_xml {
+                    print!("{svrl}");
+                } else {
+                    print!("{}", render_svrl_report(&rep.violations));
+                }
             }
         }
         OutputFormat::Sarif => {
-            if let Err(code) = print_json(&build_sarif(&results)) {
+            if let Err(code) = print_json(&build_sarif(&results, locale)) {
                 return code;
             }
         }
@@ -245,9 +265,7 @@ fn print_human_report(path: &str, rep: &ValidationReport, locale: Locale) {
         (false, Locale::En) => "FAIL",
         (false, Locale::Ro) => "RESPINS",
     };
-    let syntax = rep
-        .detected_syntax
-        .map_or_else(|| "-".to_string(), |s| format!("{s:?}"));
+    let syntax = rep.detected_syntax.map_or("-", cius_ro::XmlSyntax::label);
     let inv_num = rep
         .identity
         .as_ref()
@@ -255,13 +273,13 @@ fn print_human_report(path: &str, rep: &ValidationReport, locale: Locale) {
         .unwrap_or("-");
 
     println!(
-        "[{badge}] {path} (container={:?}, syntax={syntax}, id={inv_num})",
+        "[{badge}] {path} (container={}, syntax={syntax}, id={inv_num})",
         rep.container
     );
 
     for eng in &rep.engines {
         println!(
-            "  - {}: {:?} (evaluated={}, failed={}, warnings={})",
+            "  - {}: {} (evaluated={}, failed={}, warnings={})",
             eng.id, eng.status, eng.rules_evaluated, eng.failed_count, eng.warning_count
         );
     }
@@ -285,7 +303,24 @@ fn print_human_report(path: &str, rep: &ValidationReport, locale: Locale) {
     }
 }
 
-fn build_sarif(results: &[(String, ValidationReport)]) -> serde_json::Value {
+fn build_sarif(results: &[(String, ValidationReport)], locale: Locale) -> serde_json::Value {
+    let mut seen_rule_ids = BTreeSet::new();
+    let mut sarif_rules = Vec::new();
+    for (_, rep) in results {
+        for v in &rep.violations {
+            if seen_rule_ids.insert(v.code.clone())
+                && let Some(desc) = find_rule(&v.code)
+            {
+                sarif_rules.push(serde_json::json!({
+                    "id": v.code,
+                    "shortDescription": { "text": desc.title(locale) },
+                    "fullDescription": { "text": desc.description(locale) },
+                    "help": { "text": desc.remediation(locale) },
+                }));
+            }
+        }
+    }
+
     let sarif_results: Vec<_> = results
         .iter()
         .flat_map(|(path, rep)| {
@@ -318,7 +353,8 @@ fn build_sarif(results: &[(String, ValidationReport)]) -> serde_json::Value {
                 "driver": {
                     "name": "cius-ro",
                     "version": env!("CARGO_PKG_VERSION"),
-                    "informationUri": "https://github.com/StBogdan/ro-efactura-rust"
+                    "informationUri": "https://github.com/StBogdan/ro-efactura-rust",
+                    "rules": sarif_rules
                 }
             },
             "results": sarif_results
@@ -327,47 +363,41 @@ fn build_sarif(results: &[(String, ValidationReport)]) -> serde_json::Value {
 }
 
 fn cmd_extract(pdf: &Path, output: Option<&Path>) -> ExitCode {
-    let Ok(bytes) = read_input(pdf)
-        .map_err(|err| eprintln!("cius-ro: failed to read '{}': {err}", pdf.display()))
-    else {
-        return ExitCode::from(2);
+    let bytes = match read_input(pdf) {
+        Ok(b) => b,
+        Err(err) => {
+            eprintln!("cius-ro: failed to read '{}': {err}", pdf.display());
+            return ExitCode::from(2);
+        }
     };
-    let Ok(extracted) =
-        extract_xml_from_pdf(&bytes).map_err(|err| eprintln!("cius-ro: extraction failed: {err}"))
-    else {
-        return ExitCode::from(1);
+    let extracted = match extract_xml_from_pdf(&bytes) {
+        Ok(ext) => ext,
+        Err(err) => {
+            eprintln!("cius-ro: extraction failed: {err}");
+            return ExitCode::from(1);
+        }
     };
 
-    match output {
-        Some(out_path) => {
-            if let Err(err) = fs::write(out_path, &extracted.xml_bytes) {
-                eprintln!("cius-ro: failed to write '{}': {err}", out_path.display());
-                return ExitCode::from(2);
-            }
-            eprintln!(
-                "Extracted '{}' ({} bytes) -> {}",
-                extracted.filename,
-                extracted.xml_bytes.len(),
-                out_path.display()
-            );
+    if let Some(out_path) = output {
+        if let Err(err) = fs::write(out_path, &extracted.xml_bytes) {
+            eprintln!("cius-ro: failed to write '{}': {err}", out_path.display());
+            return ExitCode::from(2);
         }
-        None => {
-            if let Err(err) = io::stdout().lock().write_all(&extracted.xml_bytes) {
-                eprintln!("cius-ro: stdout write error: {err}");
-                return ExitCode::from(2);
-            }
-        }
+        eprintln!(
+            "Extracted '{}' ({} bytes) -> {}",
+            extracted.filename,
+            extracted.xml_bytes.len(),
+            out_path.display()
+        );
+    } else if let Err(err) = io::stdout().lock().write_all(&extracted.xml_bytes) {
+        eprintln!("cius-ro: stdout write error: {err}");
+        return ExitCode::from(2);
     }
     ExitCode::SUCCESS
 }
 
 fn cmd_id(value: &str, locale: Locale, json: bool) -> ExitCode {
-    let id_loc = if locale.is_ro() {
-        cius_ro_id::Locale::Ro
-    } else {
-        cius_ro_id::Locale::En
-    };
-    let res = inspect_identifier(value, id_loc);
+    let res = inspect_identifier(value, locale);
     if json {
         if let Err(code) = print_json(&res) {
             return code;
@@ -399,7 +429,7 @@ fn cmd_rules(code: Option<&str>, locale: Locale, markdown: bool, json: bool) -> 
             }
         } else {
             println!(
-                "{} ({:?}, category={}) [{}]",
+                "{} ({}, category={}) [{}]",
                 rule.code, rule.severity, rule.category, rule.business_terms
             );
             println!("  {}", rule.title(locale));
@@ -428,7 +458,7 @@ fn cmd_rules(code: Option<&str>, locale: Locale, markdown: bool, json: bool) -> 
         println!(
             "{:<14} {:<8} {:<24} {}",
             rule.code,
-            format!("{:?}", rule.severity),
+            rule.severity.as_str(),
             rule.business_terms,
             rule.title(locale)
         );

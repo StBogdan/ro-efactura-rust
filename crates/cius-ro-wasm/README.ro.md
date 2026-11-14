@@ -14,10 +14,14 @@ wasm-pack build crates/cius-ro-wasm --target web --release
 
 ## API JavaScript / TypeScript
 
+Fișierele generate `pkg/cius_ro_wasm.d.ts` includ definiții TypeScript complete (`ValidationReport`, `Violation`, `EngineReport`, `IdentifierInspection`, `RuleView`, `Locale`, `Severity` etc.).
+
 - `validateInvoice(bytes: Uint8Array, locale?: "en" | "ro", denyWarnings?: boolean, includeSvrl?: boolean): ValidationReport`
 - `extractPdfXml(bytes: Uint8Array): Uint8Array`
 - `validateIdentifier(input: string, locale?: "en" | "ro"): IdentifierInspection`
 - `listRules(locale?: "en" | "ro"): RuleView[]`
+
+> **Notă:** Pe ținta `wasm32-unknown-unknown`, validarea sintaxei XML, protecția XXE (`<!DOCTYPE` / `<!ENTITY`), ordinea elementelor și aritmetica zecimală CEN EN 16931, toate cele 122 de reguli ANAF `BR-RO-*`, cifrele de control `cius-ro-id` și inspecția containerului `PDF/A-3` rulează complet în memorie; compilarea schemelor XSD multi-fișier pe disc este marcată `"SKIPPED"`.
 
 ```js
 import init, {
