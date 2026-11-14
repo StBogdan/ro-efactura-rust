@@ -106,7 +106,9 @@ pub use br_ro::{
     BrRoOutcome, decode_xml_bytes, detect_root_syntax_and_bt24, evaluate_cius_ro_rules,
 };
 #[cfg(feature = "pdfa3")]
-pub use pdfa3::{ExtractedPdfXml, PdfInspectionOutcome, extract_xml_from_pdf, inspect_pdfa3};
+pub use pdfa3::{
+    ExtractedPdfXml, PdfExtractError, PdfInspectionOutcome, extract_xml_from_pdf, inspect_pdfa3,
+};
 pub use rules::{RULES, RuleDescriptor, RuleView, find_rule, render_rules_markdown};
 #[cfg(feature = "svrl")]
 pub use semantic::render_svrl_report;

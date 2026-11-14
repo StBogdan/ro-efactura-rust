@@ -60,7 +60,7 @@ pub fn validate_invoice(
 pub fn extract_pdf_xml(bytes: &[u8]) -> Result<Vec<u8>, JsError> {
     extract_xml_from_pdf(bytes)
         .map(|ext| ext.xml_bytes)
-        .map_err(|msg| JsError::new(&msg))
+        .map_err(|err| JsError::new(&err.to_string()))
 }
 
 /// Validates and normalizes a Romanian identifier (`CUI`, `CNP`, `0000000000000`, `ONRC`,
