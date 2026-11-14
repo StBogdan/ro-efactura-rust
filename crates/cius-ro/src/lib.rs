@@ -116,7 +116,7 @@ pub use types::{
     Severity, ValidateOptions, ValidationReport, Violation, XmlDecodeError, XmlSyntax,
 };
 #[cfg(feature = "xsd")]
-pub use xsd::warm_xsd_validators;
+pub use xsd::{XsdInitError, warm_xsd_validators};
 
 const PDFA_ENGINE_ID: EngineId = EngineId::Pdfa3Iso19005;
 const PDFA_ENGINE_NAME: &str = "ISO 19005-3 (PDF/A-3) & efactura.xml Inspector";
@@ -288,23 +288,22 @@ fn validate_xml_internal(
     }
 
     let decoded = br_ro::decode_xml_bytes(xml_bytes);
-    let parsed_doc = decoded
-        .as_deref()
-        .ok()
-        .and_then(|s| roxmltree::Document::parse(s).ok());
+    let roxml_res = decoded.as_deref().ok().map(roxmltree::Document::parse);
+    let dtd_detected = matches!(roxml_res, Some(Err(roxmltree::Error::DtdDetected)));
+    let parsed_doc = roxml_res.and_then(Result::ok);
     let (mut syntax, mut customization_id) = parsed_doc.as_ref().map_or((None, None), |d| {
         br_ro::detect_root_syntax_and_bt24(d.root_element())
     });
 
     #[cfg(feature = "xsd")]
     {
-        let xsd_out = xsd::evaluate_xsd(decoded.as_deref(), syntax, opts);
+        let xsd_out = xsd::evaluate_xsd(decoded.as_deref(), dtd_detected, syntax, opts);
         engines.push(xsd_out.report);
         violations.extend(xsd_out.violations);
     }
     #[cfg(not(feature = "xsd"))]
     {
-        let _ = &decoded;
+        let _ = (&decoded, dtd_detected);
         engines.push(EngineReport::skipped(
             EngineId::XsdSchema,
             "Official W3C XSD 1.1 Grammar Validator",

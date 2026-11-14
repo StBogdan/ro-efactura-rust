@@ -146,34 +146,39 @@ impl RuleAcc {
 }
 
 /// Decodes UTF-8 (with optional BOM) or UTF-16BE / UTF-16LE XML bytes into a `String`.
-pub fn decode_xml_bytes(bytes: &[u8]) -> Result<String, String> {
+pub fn decode_xml_bytes(bytes: &[u8]) -> Result<std::borrow::Cow<'_, str>, crate::types::XmlDecodeError> {
+    use std::borrow::Cow;
+    use crate::types::XmlDecodeError;
+
     if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
         return std::str::from_utf8(rest)
-            .map(str::to_owned)
-            .map_err(|e| format!("Invalid UTF-8 sequence after BOM: {e}"));
+            .map(Cow::Borrowed)
+            .map_err(XmlDecodeError::InvalidUtf8AfterBom);
     }
-    for (bom, is_be, label) in [
+    for (bom, is_be, encoding) in [
         (&[0xFE, 0xFF][..], true, "UTF-16BE"),
         (&[0xFF, 0xFE][..], false, "UTF-16LE"),
     ] {
-        if let Some(rest) = bytes.strip_prefix(bom).filter(|r| r.len() % 2 == 0) {
-            let units: Vec<u16> = rest
-                .chunks_exact(2)
-                .map(|c| {
-                    if is_be {
-                        u16::from_be_bytes([c[0], c[1]])
-                    } else {
-                        u16::from_le_bytes([c[0], c[1]])
-                    }
-                })
-                .collect();
-            return String::from_utf16(&units)
-                .map_err(|e| format!("Invalid {label} sequence: {e}"));
+        if let Some(rest) = bytes.strip_prefix(bom) {
+            if rest.len() % 2 != 0 {
+                return Err(XmlDecodeError::TruncatedUtf16 { encoding });
+            }
+            let units = rest.chunks_exact(2).map(|c| {
+                if is_be {
+                    u16::from_be_bytes([c[0], c[1]])
+                } else {
+                    u16::from_le_bytes([c[0], c[1]])
+                }
+            });
+            let decoded: String = char::decode_utf16(units)
+                .collect::<Result<String, _>>()
+                .map_err(|_| XmlDecodeError::InvalidUtf16 { encoding })?;
+            return Ok(Cow::Owned(decoded));
         }
     }
     std::str::from_utf8(bytes)
-        .map(str::to_owned)
-        .map_err(|e| format!("XML payload is not valid UTF-8: {e}"))
+        .map(Cow::Borrowed)
+        .map_err(XmlDecodeError::InvalidUtf8)
 }
 
 /// Inspects a parsed XML root element to identify its [`XmlSyntax`] and `BT-24` specification ID.
