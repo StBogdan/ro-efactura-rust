@@ -1,10 +1,40 @@
+//! Integration, `serde` invariant, and property-based tests for `cius-ro-id`.
+
 use cius_ro_id::{
+    ANAF_B2C_PLACEHOLDER, BucharestSector, Cnp, CnpError, CnpOrPlaceholder, County, Cui, CuiError,
+    ISO_3166_2_RO_CODES, IbanError, IdentifierKind, Locale, Onrc, OnrcFormat, OnrcRegister, RoIban,
     compute_cnp_check_digit, compute_cui_check_digit, compute_ro_iban_check_digits,
-    inspect_identifier, is_anaf_b2c_placeholder, parse_cui_candidate, BucharestSector, Cnp,
-    CnpError, CnpOrPlaceholder, County, Cui, CuiError, IbanError, Onrc, OnrcFormat, OnrcRegister,
-    RoIban, ANAF_B2C_PLACEHOLDER, ISO_3166_2_RO_CODES,
+    inspect_identifier, is_anaf_b2c_placeholder, parse_cui_candidate,
 };
 use proptest::prelude::*;
+
+const fn assert_copy<T: Copy>() {}
+
+#[test]
+fn all_identifier_value_types_are_stack_copy() {
+    assert_copy::<Cui>();
+    assert_copy::<Cnp>();
+    assert_copy::<CnpOrPlaceholder>();
+    assert_copy::<RoIban>();
+    assert_copy::<Onrc>();
+    assert_copy::<County>();
+    assert_copy::<BucharestSector>();
+    assert_copy::<Locale>();
+    assert_copy::<IdentifierKind>();
+}
+
+#[test]
+fn test_locale_parsing_and_core_error_trait() {
+    assert_eq!("en".parse::<Locale>().unwrap(), Locale::En);
+    assert_eq!("EN-US".parse::<Locale>().unwrap(), Locale::En);
+    assert_eq!("ro_RO".parse::<Locale>().unwrap(), Locale::Ro);
+    assert_eq!("  RO ".parse::<Locale>().unwrap(), Locale::Ro);
+
+    let err = "fr".parse::<Locale>().unwrap_err();
+    assert_eq!(err.input(), "fr");
+    let boxed: Box<dyn core::error::Error> = Box::new(err);
+    assert!(boxed.to_string().contains("fr"));
+}
 
 #[test]
 fn test_real_and_official_cui_vectors() {
@@ -47,6 +77,7 @@ fn test_real_and_official_cui_vectors() {
         Err(CuiError::InvalidLength { len: 11 })
     );
     assert_eq!(Cui::parse("RO12AB34"), Err(CuiError::InvalidCharacters));
+    assert_eq!(Cui::parse("R123456"), Err(CuiError::InvalidCharacters));
 
     // Candidate discriminator ignores 13-digit CNP / B2C and ONRC
     assert_eq!(parse_cui_candidate(ANAF_B2C_PLACEHOLDER), None);
@@ -75,6 +106,7 @@ fn test_cnp_and_anaf_b2c_placeholder_vectors() {
     assert_eq!(cnp1.birth_month(), 6);
     assert_eq!(cnp1.birth_day(), 15);
     assert_eq!(cnp1.county_code(), 12);
+    assert_eq!(cnp1.sequence(), 345);
 
     // Leap year 2024-02-29 in nationwide county code 70 (`524022970001x`)
     let chk_leap = compute_cnp_check_digit("524022970001").unwrap();
@@ -83,7 +115,7 @@ fn test_cnp_and_anaf_b2c_placeholder_vectors() {
     assert_eq!(leap_cnp.birth_year(), Some(2024));
     assert_eq!(leap_cnp.county_code(), 70);
 
-    // Non-leap year 1900-02-29 (`300022940001x`) must fail calendar validation!
+    // Non-leap year 1900-02-29 (`100022940001x`) must fail calendar validation!
     let chk_1900 = compute_cnp_check_digit("100022940001").unwrap();
     let bad_1900 = format!("100022940001{chk_1900}");
     assert!(matches!(
@@ -110,6 +142,9 @@ fn test_cnp_and_anaf_b2c_placeholder_vectors() {
 fn test_onrc_classic_and_law265_formats() {
     let classic = Onrc::parse("J40/1234/2022").unwrap();
     assert_eq!(classic.register(), OnrcRegister::J);
+    assert_eq!(classic.year(), 2022);
+    assert_eq!(classic.sequence(), 1234);
+    assert_eq!(classic.county_code(), 40);
     assert_eq!(
         classic.format(),
         &OnrcFormat::Classic {
@@ -137,6 +172,9 @@ fn test_onrc_classic_and_law265_formats() {
     // Law 265/2022 14-char format (J + YYYY + NNNNNN + JJ + C)
     let modern = Onrc::parse("J2024001234005").unwrap();
     assert_eq!(modern.register(), OnrcRegister::J);
+    assert_eq!(modern.year(), 2024);
+    assert_eq!(modern.sequence(), 1234);
+    assert_eq!(modern.county_code(), 0);
     assert_eq!(modern.to_string(), "J2024001234005");
 
     // Classic 2003–2008 DD.MM.YYYY certificate format (`J40/1234/15.03.2005`) + whitespace candidate
@@ -210,10 +248,74 @@ fn test_iso_3166_2_ro_and_bucharest_sectors() {
     assert!("Sector 1".parse::<BucharestSector>().is_err());
 
     // Unified inspector localized check
-    let rep_ro = inspect_identifier("RO45678918", true);
+    let rep_ro = inspect_identifier("RO45678918", Locale::Ro);
     assert!(rep_ro.is_valid);
-    assert_eq!(rep_ro.kind, "cui");
+    assert_eq!(rep_ro.kind, IdentifierKind::Cui);
     assert!(rep_ro.details.contains("valid"));
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn test_serde_canonical_strings_and_invariant_enforcement() {
+    // 1. Cui round-trips as canonical string and rejects invalid checksums / non-strings
+    let cui: Cui = serde_json::from_str("\"RO45678918\"").unwrap();
+    assert_eq!(serde_json::to_string(&cui).unwrap(), "\"RO45678918\"");
+    assert!(serde_json::from_str::<Cui>("\"RO45678910\"").is_err());
+    assert!(serde_json::from_str::<Cui>("\"\" ").is_err());
+    assert!(serde_json::from_str::<Cui>("{\"digits\":\"\",\"has_ro_prefix\":false}").is_err());
+
+    // 2. Cnp & CnpOrPlaceholder enforce calendar & checksum invariants
+    let cnp: Cnp = serde_json::from_str("\"1900101410011\"").unwrap();
+    assert_eq!(serde_json::to_string(&cnp).unwrap(), "\"1900101410011\"");
+    assert!(serde_json::from_str::<Cnp>("\"0000000000000\"").is_err());
+    assert!(serde_json::from_str::<Cnp>("\"bad\"").is_err());
+
+    let b2c: CnpOrPlaceholder = serde_json::from_str("\"0000000000000\"").unwrap();
+    assert!(b2c.is_placeholder());
+    assert_eq!(serde_json::to_string(&b2c).unwrap(), "\"0000000000000\"");
+
+    // 3. RoIban rejects valid foreign IBANs (e.g. DE89...) during deserialization!
+    let iban: RoIban = serde_json::from_str("\"RO49AAAA1B31007593840000\"").unwrap();
+    assert_eq!(
+        serde_json::to_string(&iban).unwrap(),
+        "\"RO49AAAA1B31007593840000\""
+    );
+    assert!(serde_json::from_str::<RoIban>("\"DE89370400440532013000\"").is_err());
+
+    // 4. Onrc serializes as canonical string
+    let onrc: Onrc = serde_json::from_str("\"J8/512/2023\"").unwrap();
+    assert_eq!(serde_json::to_string(&onrc).unwrap(), "\"J08/512/2023\"");
+    assert!(serde_json::from_str::<Onrc>("\"J99/1/2023\"").is_err());
+
+    // 5. County & BucharestSector serialize as ISO 3166-2:RO ('RO-CJ') and ANAF 'SECTOR1'
+    let cj: County = serde_json::from_str("\"RO-CJ\"").unwrap();
+    assert_eq!(cj, County::CJ);
+    assert_eq!(serde_json::to_string(&cj).unwrap(), "\"RO-CJ\"");
+    assert!(serde_json::from_str::<County>("\"CJ\"").is_err());
+
+    let s1: BucharestSector = serde_json::from_str("\"SECTOR1\"").unwrap();
+    assert_eq!(s1, BucharestSector::Sector1);
+    assert_eq!(serde_json::to_string(&s1).unwrap(), "\"SECTOR1\"");
+    assert!(serde_json::from_str::<BucharestSector>("\"Sector1\"").is_err());
+
+    // 6. IdentifierInspection serializes IdentifierKind as snake_case
+    let insp = inspect_identifier("0000000000000", Locale::En);
+    let json = serde_json::to_value(&insp).unwrap();
+    assert_eq!(json["kind"], "anaf_b2c_placeholder");
+}
+
+#[test]
+fn test_bounded_overlong_inputs_do_not_panic() {
+    let huge_digits = "9".repeat(100_000);
+    assert!(matches!(
+        Cui::parse(&huge_digits),
+        Err(CuiError::InvalidLength { len: 100_000 })
+    ));
+    assert!(Cnp::parse(&huge_digits).is_err());
+    assert!(RoIban::parse(&format!("RO{huge_digits}")).is_err());
+    assert!(Onrc::parse(&format!("J{huge_digits}")).is_err());
+    assert_eq!(County::lookup_fuzzy(&huge_digits), None);
+    assert_eq!(BucharestSector::normalize_fuzzy(&huge_digits), None);
 }
 
 proptest! {

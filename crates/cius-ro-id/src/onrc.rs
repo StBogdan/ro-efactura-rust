@@ -4,13 +4,12 @@
 //! 1. **Classic format** (`J40/1234/2022`, `F12/89/2021`, `C08/5/2019`): `[JFC]` + county (`1..=40`, `51`, `52`)
 //!    + `/` + sequence number + `/` + 4-digit year (`1990..=2100`).
 //! 2. **Law 265/2022 electronic format** (rolled out July 2024, e.g. `J2024001234005`):
-//!    `[JFC]` + 4-digit year (`YYYY`) + 6-digit national sequence (`NNNNNN`) + 2-digit county (`00..=52`) + 1 control digit (`[JFC]\d{13}`).
+//!    `[JFC]` + 4-digit year (`YYYY`) + 6-digit national sequence (`NNNNNN`) + 2-digit county (`00..=40`, `51`, `52`) + 1 control digit (`[JFC]\d{13}`).
 
-use alloc::format;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 use core::fmt;
 use core::str::FromStr;
+
+use crate::{Locale, LocalizedFmt};
 
 /// Trade Register section prefix (`J`, `F`, or `C`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,7 +45,7 @@ impl OnrcRegister {
 }
 
 /// Representation variant of a parsed [`Onrc`] Trade Register identifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OnrcFormat {
     /// Classic slash-delimited format (`J40/1234/2022`).
@@ -72,9 +71,9 @@ pub enum OnrcFormat {
 }
 
 /// Validation error returned when parsing a Romanian [`Onrc`] identifier.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[error("{}", self.message_localized(false))]
+#[non_exhaustive]
 pub enum OnrcError {
     /// Input is empty.
     Empty,
@@ -82,7 +81,7 @@ pub enum OnrcError {
     InvalidRegisterPrefix,
     /// Structure matches neither `J<county>/<seq>/<year>` nor Law 265/2022 `[JFC]\d{13}`.
     InvalidFormat,
-    /// County code is outside the valid ONRC county range (`1..=40`, `51`, `52`, or `00` in Law 265/2022).
+    /// County code is outside the valid `ONRC` county range (`1..=40`, `51`, `52`, or `00` in Law 265/2022).
     InvalidCounty(u8),
     /// Sequence number is zero or unparseable.
     InvalidSequence,
@@ -90,48 +89,54 @@ pub enum OnrcError {
     InvalidYear(u16),
 }
 
-impl OnrcError {
-    /// Returns a human-readable error message in English (`false`) or Romanian (`true`).
-    #[must_use]
-    pub fn message_localized(&self, ro: bool) -> String {
-        match (self, ro) {
-            (Self::Empty, false) => "ONRC Trade Register number cannot be empty.".to_string(),
-            (Self::Empty, true) => {
-                "Numărul de ordine în Registrul Comerțului (ONRC) nu poate fi gol.".to_string()
+impl LocalizedFmt for OnrcError {
+    fn fmt_locale(&self, f: &mut fmt::Formatter<'_>, locale: Locale) -> fmt::Result {
+        match (self, locale) {
+            (Self::Empty, Locale::En) => f.write_str("ONRC Trade Register number cannot be empty."),
+            (Self::Empty, Locale::Ro) => f.write_str(
+                "Numărul de ordine în Registrul Comerțului (ONRC) nu poate fi gol.",
+            ),
+            (Self::InvalidRegisterPrefix, Locale::En) => {
+                f.write_str("ONRC number must start with 'J', 'F', or 'C'.")
             }
-            (Self::InvalidRegisterPrefix, false) => {
-                "ONRC number must start with 'J', 'F', or 'C'.".to_string()
+            (Self::InvalidRegisterPrefix, Locale::Ro) => {
+                f.write_str("Numărul ONRC trebuie să înceapă cu litera 'J', 'F' sau 'C'.")
             }
-            (Self::InvalidRegisterPrefix, true) => {
-                "Numărul ONRC trebuie să înceapă cu litera 'J', 'F' sau 'C'.".to_string()
+            (Self::InvalidFormat, Locale::En) => f.write_str(
+                "ONRC number must follow classic 'J40/1234/2022' or Law 265/2022 'J2024001234005' format.",
+            ),
+            (Self::InvalidFormat, Locale::Ro) => f.write_str(
+                "Numărul ONRC trebuie să respecte formatul clasic 'J40/1234/2022' sau formatul Legii 265/2022 'J2024001234005'.",
+            ),
+            (Self::InvalidCounty(c), Locale::En) => {
+                write!(f, "Invalid ONRC county code '{c:02}'.")
             }
-            (Self::InvalidFormat, false) => {
-                "ONRC number must follow classic 'J40/1234/2022' or Law 265/2022 'J2024001234005' format.".to_string()
+            (Self::InvalidCounty(c), Locale::Ro) => {
+                write!(f, "Indicativul de județ ONRC '{c:02}' este invalid.")
             }
-            (Self::InvalidFormat, true) => {
-                "Numărul ONRC trebuie să respecte formatul clasic 'J40/1234/2022' sau formatul Legii 265/2022 'J2024001234005'.".to_string()
+            (Self::InvalidSequence, Locale::En) => {
+                f.write_str("ONRC registration sequence must be positive.")
             }
-            (Self::InvalidCounty(c), false) => format!("Invalid ONRC county code '{c:02}'."),
-            (Self::InvalidCounty(c), true) => {
-                format!("Indicativul de județ ONRC '{c:02}' este invalid.")
+            (Self::InvalidSequence, Locale::Ro) => {
+                f.write_str("Numărul de ordine ONRC trebuie să fie un întreg pozitiv.")
             }
-            (Self::InvalidSequence, false) => {
-                "ONRC registration sequence must be positive.".to_string()
+            (Self::InvalidYear(y), Locale::En) => {
+                write!(f, "Invalid ONRC registration year '{y}' (expected 1990..=2100).")
             }
-            (Self::InvalidSequence, true) => {
-                "Numărul de ordine ONRC trebuie să fie un întreg pozitiv.".to_string()
-            }
-            (Self::InvalidYear(y), false) => {
-                format!("Invalid ONRC registration year '{y}' (expected 1990..=2100).")
-            }
-            (Self::InvalidYear(y), true) => {
-                format!("Anul înmatriculării ONRC '{y}' este invalid (permis: 1990..=2100).")
-            }
+            (Self::InvalidYear(y), Locale::Ro) => write!(
+                f,
+                "Anul înmatriculării ONRC '{y}' este invalid (permis: 1990..=2100)."
+            ),
         }
     }
 }
 
-/// Validated Romanian Trade Register (`ONRC`) identifier.
+impl_localized_error!(OnrcError);
+
+/// Validated Romanian Trade Register (`ONRC`) identifier stored inline on the stack (`Copy`).
+///
+/// When `serde` is enabled, [`Onrc`] serializes as its normalized canonical string (`"J40/1234/2022"`
+/// or `"J2024001234005"`) and validates all structural invariants on deserialization.
 ///
 /// # Examples
 /// ```
@@ -140,32 +145,56 @@ impl OnrcError {
 /// let classic: Onrc = "J40/1234/2022".parse().unwrap();
 /// assert_eq!(classic.register(), OnrcRegister::J);
 /// assert_eq!(classic.to_string(), "J40/1234/2022");
+/// assert_eq!(classic.year(), 2022);
 ///
 /// let modern: Onrc = "J2024001234005".parse().unwrap();
 /// assert_eq!(modern.register(), OnrcRegister::J);
+/// assert_eq!(modern.year(), 2024);
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Onrc {
     register: OnrcRegister,
     format: OnrcFormat,
 }
 
+#[cfg(feature = "serde")]
+impl_str_serde!(Onrc, "a valid Romanian ONRC Trade Register number");
+
 impl Onrc {
-    /// Parses and validates a classic or Law 265/2022 ONRC number.
+    /// Parses and validates a classic or Law 265/2022 `ONRC` number.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OnrcError`] if the input is empty, lacks a `'J'`/`'F'`/`'C'` prefix, has an invalid
+    /// structure, or specifies an out-of-range county, sequence, or registration year.
     pub fn parse(raw: &str) -> Result<Self, OnrcError> {
-        let cleaned: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
-        if cleaned.is_empty() {
+        let mut buf = [0u8; 32];
+        let mut len = 0usize;
+        for ch in raw.chars().filter(|c| !c.is_whitespace()) {
+            if len == 0 && (!ch.is_ascii() || OnrcRegister::from_ascii(ch as u8).is_none()) {
+                return Err(OnrcError::InvalidRegisterPrefix);
+            }
+            if !ch.is_ascii() || len >= buf.len() {
+                return Err(OnrcError::InvalidFormat);
+            }
+            buf[len] = ch as u8;
+            len += 1;
+        }
+        if len == 0 {
             return Err(OnrcError::Empty);
         }
 
-        let register = OnrcRegister::from_ascii(cleaned.as_bytes()[0])
-            .ok_or(OnrcError::InvalidRegisterPrefix)?;
-        let rest = &cleaned[1..];
+        let register = OnrcRegister::from_ascii(buf[0]).ok_or(OnrcError::InvalidRegisterPrefix)?;
+        let rest = core::str::from_utf8(&buf[1..len]).map_err(|_| OnrcError::InvalidFormat)?;
 
         if rest.contains('/') {
-            let parts: Vec<&str> = rest.split('/').collect();
-            let [county_str, seq_str, third_str] = parts.as_slice() else {
+            let mut segments = rest.split('/');
+            let (Some(county_str), Some(seq_str), Some(third_str), None) = (
+                segments.next(),
+                segments.next(),
+                segments.next(),
+                segments.next(),
+            ) else {
                 return Err(OnrcError::InvalidFormat);
             };
             let year_str = parse_classic_year_or_date(third_str)?;
@@ -240,6 +269,30 @@ impl Onrc {
     pub const fn format(&self) -> &OnrcFormat {
         &self.format
     }
+
+    /// Returns the 4-digit registration year (`1990..=2100`).
+    #[must_use]
+    pub const fn year(&self) -> u16 {
+        match self.format {
+            OnrcFormat::Classic { year, .. } | OnrcFormat::Law265 { year, .. } => year,
+        }
+    }
+
+    /// Returns the registration sequence number (`>= 1`).
+    #[must_use]
+    pub const fn sequence(&self) -> u32 {
+        match self.format {
+            OnrcFormat::Classic { sequence, .. } | OnrcFormat::Law265 { sequence, .. } => sequence,
+        }
+    }
+
+    /// Returns the numeric `ONRC` county code (`1..=40`, `51`, `52`, or `0` for nationwide Law 265/2022).
+    #[must_use]
+    pub const fn county_code(&self) -> u8 {
+        match self.format {
+            OnrcFormat::Classic { county, .. } | OnrcFormat::Law265 { county, .. } => county,
+        }
+    }
 }
 
 impl fmt::Display for Onrc {
@@ -269,7 +322,7 @@ impl FromStr for Onrc {
     }
 }
 
-/// Returns `true` if `raw` structurally looks like an ONRC Trade Register attempt
+/// Returns `true` if `raw` structurally looks like an `ONRC` Trade Register attempt
 /// (starts with `J`, `F`, or `C` followed by a digit or `'/'`, ignoring whitespace).
 #[must_use]
 pub fn is_onrc_candidate(raw: &str) -> bool {

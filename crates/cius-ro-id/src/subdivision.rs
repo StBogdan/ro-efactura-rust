@@ -4,15 +4,16 @@
 //! `BR-RO-200`, and `BR-RO-210`, while offering fuzzy lookup helpers (`"Cluj"` -> `RO-CJ`,
 //! `"Sectorul 1"` -> `SECTOR1`) for actionable remediation hints.
 
-use alloc::format;
 use alloc::string::{String, ToString};
 use core::fmt;
 use core::str::FromStr;
 
+use crate::{Locale, LocalizedFmt};
+
 /// Error returned when parsing a strict [`County`] (`ISO 3166-2:RO`) or [`BucharestSector`] (`SECTOR-RO`) code.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[error("{}", self.message_localized(false))]
+#[non_exhaustive]
 pub enum SubdivisionError {
     /// Value is not one of the 42 official `ISO 3166-2:RO` county codes (`RO-B`, `RO-AB`..`RO-VN`).
     InvalidCountyCode(String),
@@ -20,26 +21,28 @@ pub enum SubdivisionError {
     InvalidBucharestSector(String),
 }
 
-impl SubdivisionError {
-    /// Returns a human-readable error message in English (`false`) or Romanian (`true`).
-    #[must_use]
-    pub fn message_localized(&self, ro: bool) -> String {
-        match (self, ro) {
-            (Self::InvalidCountyCode(val), false) => {
-                format!("Invalid ISO 3166-2:RO county subdivision code '{val}'.")
+impl LocalizedFmt for SubdivisionError {
+    fn fmt_locale(&self, f: &mut fmt::Formatter<'_>, locale: Locale) -> fmt::Result {
+        match (self, locale) {
+            (Self::InvalidCountyCode(val), Locale::En) => {
+                write!(f, "Invalid ISO 3166-2:RO county subdivision code '{val}'.")
             }
-            (Self::InvalidCountyCode(val), true) => {
-                format!("Codul subdiviziunii ISO 3166-2:RO '{val}' este invalid.")
+            (Self::InvalidCountyCode(val), Locale::Ro) => {
+                write!(f, "Codul subdiviziunii ISO 3166-2:RO '{val}' este invalid.")
             }
-            (Self::InvalidBucharestSector(val), false) => {
-                format!("Invalid Bucharest sector code '{val}' (expected SECTOR1..SECTOR6).")
-            }
-            (Self::InvalidBucharestSector(val), true) => format!(
+            (Self::InvalidBucharestSector(val), Locale::En) => write!(
+                f,
+                "Invalid Bucharest sector code '{val}' (expected SECTOR1..SECTOR6)."
+            ),
+            (Self::InvalidBucharestSector(val), Locale::Ro) => write!(
+                f,
                 "Codul sectorului București '{val}' este invalid (permis: SECTOR1..SECTOR6)."
             ),
         }
     }
 }
+
+impl_localized_error!(SubdivisionError);
 
 /// All 42 official `ISO 3166-2:RO` country subdivision codes accepted by ANAF (`$ISO-3166-RO-CODES`).
 pub const ISO_3166_2_RO_CODES: [&str; 42] = [
@@ -56,10 +59,15 @@ pub const BUCHAREST_SECTOR_CODES: [&str; 6] = [
 ];
 
 /// Official `ISO 3166-2:RO` administrative subdivision (Bucharest municipality + 41 counties).
+///
+/// When `serde` is enabled, [`County`] serializes as its normative `ISO 3166-2:RO` code
+/// (`"RO-B"`, `"RO-CJ"`, etc.) and validates exact `ISO 3166-2:RO` strings on deserialization.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[allow(missing_docs)]
+#[expect(
+    missing_docs,
+    reason = "42 self-explanatory ISO 3166-2:RO county abbreviation variants"
+)]
 pub enum County {
     B,
     AB,
@@ -104,6 +112,12 @@ pub enum County {
     VL,
     VN,
 }
+
+#[cfg(feature = "serde")]
+impl_str_serde!(
+    County,
+    "a valid ISO 3166-2:RO county code (e.g. 'RO-B' or 'RO-CJ')"
+);
 
 const COUNTY_TABLE: [(County, &str, &str, &str, &str); 42] = [
     (County::B, "RO-B", "B", "București", "Bucuresti"),
@@ -244,10 +258,15 @@ impl FromStr for County {
 }
 
 /// Official ANAF `SECTOR-RO` Bucharest district code (`SECTOR1`..`SECTOR6`) for `BT-37` / `BT-52` / `BT-66` / `BT-77`.
+///
+/// When `serde` is enabled, [`BucharestSector`] serializes as `"SECTOR1"`..`"SECTOR6"` and validates
+/// exact `SECTOR1`..`SECTOR6` codes on deserialization.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[allow(missing_docs)]
+#[expect(
+    missing_docs,
+    reason = "6 self-explanatory Bucharest sector enum variants"
+)]
 pub enum BucharestSector {
     Sector1 = 1,
     Sector2 = 2,
@@ -256,6 +275,12 @@ pub enum BucharestSector {
     Sector5 = 5,
     Sector6 = 6,
 }
+
+#[cfg(feature = "serde")]
+impl_str_serde!(
+    BucharestSector,
+    "a valid Bucharest sector code ('SECTOR1'..'SECTOR6')"
+);
 
 impl BucharestSector {
     /// Strict ANAF lookup (`"SECTOR1"`..`"SECTOR6"`).
@@ -323,5 +348,9 @@ impl FromStr for BucharestSector {
 }
 
 fn fold_ascii_upper(s: &str) -> String {
-    deunicode::deunicode(s.trim()).to_ascii_uppercase()
+    let trimmed = s.trim();
+    if trimmed.len() > 256 {
+        return String::new();
+    }
+    deunicode::deunicode(trimmed).to_ascii_uppercase()
 }

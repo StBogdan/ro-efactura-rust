@@ -67,7 +67,12 @@ pub fn extract_pdf_xml(bytes: &[u8]) -> Result<Vec<u8>, JsError> {
 /// `RO IBAN`, `ISO 3166-2:RO` county, or Bucharest `SECTOR1`..`SECTOR6`).
 #[wasm_bindgen(js_name = validateIdentifier)]
 pub fn validate_identifier(input: &str, locale: Option<String>) -> Result<JsValue, JsError> {
-    to_js_object(&inspect_identifier(input, parse_locale_opt(locale).is_ro()))
+    let id_loc = if parse_locale_opt(locale).is_ro() {
+        cius_ro_id::Locale::Ro
+    } else {
+        cius_ro_id::Locale::En
+    };
+    to_js_object(&inspect_identifier(input, id_loc))
 }
 
 /// Returns the complete localized `CIUS-RO 1.0.1` + `cius-ro-id` rule catalog as a JavaScript array.

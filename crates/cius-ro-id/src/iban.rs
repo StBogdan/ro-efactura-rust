@@ -1,18 +1,19 @@
 //! Romanian IBAN (`RO` + 2 check digits + 4-char bank code + 16-char account, 24 chars total).
 //!
-//! Validates the National Bank of Romania (`BNR`) 24-character IBAN structure and ISO/IEC 7064 MOD 97-10
+//! Validates the National Bank of Romania (`BNR`) 24-character IBAN structure and `ISO/IEC 7064 MOD 97-10`
 //! check digits used in `BT-84` (`cac:PayeeFinancialAccount/cbc:ID`).
 
-use alloc::format;
 use alloc::string::{String, ToString};
 use core::fmt;
 use core::str::FromStr;
 use iban::{Iban, IbanLike};
 
+use crate::{Locale, LocalizedFmt};
+
 /// Validation error returned when parsing a Romanian [`RoIban`].
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[error("{}", self.message_localized(false))]
+#[non_exhaustive]
 pub enum IbanError {
     /// Input is empty.
     Empty,
@@ -25,7 +26,7 @@ pub enum IbanError {
     },
     /// Contains non-ASCII-alphanumeric characters, or check digits at positions `2..4` are not digits.
     InvalidStructure,
-    /// ISO/IEC 7064 MOD 97-10 check-digit verification failed.
+    /// `ISO/IEC 7064 MOD 97-10` check-digit verification failed.
     InvalidChecksum {
         /// Expected two-digit check number (`02..=98`).
         expected: u8,
@@ -34,42 +35,48 @@ pub enum IbanError {
     },
 }
 
-impl IbanError {
-    /// Returns a human-readable error message in English (`false`) or Romanian (`true`).
-    #[must_use]
-    pub fn message_localized(&self, ro: bool) -> String {
-        match (self, ro) {
-            (Self::Empty, false) => "IBAN cannot be empty.".to_string(),
-            (Self::Empty, true) => "Codul IBAN nu poate fi gol.".to_string(),
-            (Self::NotRomanianCountryCode, false) => {
-                "Romanian IBAN must start with country code 'RO'.".to_string()
+impl LocalizedFmt for IbanError {
+    fn fmt_locale(&self, f: &mut fmt::Formatter<'_>, locale: Locale) -> fmt::Result {
+        match (self, locale) {
+            (Self::Empty, Locale::En) => f.write_str("IBAN cannot be empty."),
+            (Self::Empty, Locale::Ro) => f.write_str("Codul IBAN nu poate fi gol."),
+            (Self::NotRomanianCountryCode, Locale::En) => {
+                f.write_str("Romanian IBAN must start with country code 'RO'.")
             }
-            (Self::NotRomanianCountryCode, true) => {
-                "Codul IBAN românesc trebuie să înceapă cu 'RO'.".to_string()
+            (Self::NotRomanianCountryCode, Locale::Ro) => {
+                f.write_str("Codul IBAN românesc trebuie să înceapă cu 'RO'.")
             }
-            (Self::InvalidLength { len }, false) => {
-                format!("Romanian IBAN must be exactly 24 characters long (found {len}).")
+            (Self::InvalidLength { len }, Locale::En) => {
+                write!(f, "Romanian IBAN must be exactly 24 characters long (found {len}).")
             }
-            (Self::InvalidLength { len }, true) => {
-                format!("Codul IBAN românesc trebuie să aibă exact 24 de caractere (găsit: {len}).")
-            }
-            (Self::InvalidStructure, false) => {
-                "Romanian IBAN must match RO + 2 digits + 4-char bank code + 16-char alphanumeric account.".to_string()
-            }
-            (Self::InvalidStructure, true) => {
-                "Codul IBAN trebuie să respecte structura RO + 2 cifre control + 4 caractere bancă + 16 caractere cont.".to_string()
-            }
-            (Self::InvalidChecksum { expected, actual }, false) => format!(
+            (Self::InvalidLength { len }, Locale::Ro) => write!(
+                f,
+                "Codul IBAN românesc trebuie să aibă exact 24 de caractere (găsit: {len})."
+            ),
+            (Self::InvalidStructure, Locale::En) => f.write_str(
+                "Romanian IBAN must match RO + 2 digits + 4-char bank code + 16-char alphanumeric account.",
+            ),
+            (Self::InvalidStructure, Locale::Ro) => f.write_str(
+                "Codul IBAN trebuie să respecte structura RO + 2 cifre control + 4 caractere bancă + 16 caractere cont.",
+            ),
+            (Self::InvalidChecksum { expected, actual }, Locale::En) => write!(
+                f,
                 "Romanian IBAN fails ISO 7064 MOD 97-10 checksum (expected RO{expected:02}..., found RO{actual:02}...)."
             ),
-            (Self::InvalidChecksum { expected, actual }, true) => format!(
+            (Self::InvalidChecksum { expected, actual }, Locale::Ro) => write!(
+                f,
                 "Suma de control ISO 7064 MOD 97-10 a IBAN-ului este invalidă (așteptat RO{expected:02}..., găsit RO{actual:02}...)."
             ),
         }
     }
 }
 
+impl_localized_error!(IbanError);
+
 /// Validated 24-character Romanian IBAN (`ISO 13616` / `BNR`).
+///
+/// When `serde` is enabled, [`RoIban`] serializes as its 24-character uppercase electronic string
+/// and enforces `"RO"` country-code, length, structure, and `MOD 97-10` invariants on deserialization.
 ///
 /// # Examples
 /// ```
@@ -82,39 +89,65 @@ impl IbanError {
 /// assert_eq!(iban.account_number(), "1B31007593840000");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct RoIban(Iban);
+
+#[cfg(feature = "serde")]
+impl_str_serde!(
+    RoIban,
+    "a valid 24-character Romanian IBAN starting with 'RO'"
+);
 
 impl RoIban {
     /// Parses and validates a Romanian IBAN (ignoring spaces and hyphens).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IbanError`] if the input is empty, does not begin with `"RO"`, is not 24 characters long,
+    /// violates the `BNR` structure, or fails `ISO 7064 MOD 97-10` check-digit verification.
     pub fn parse(raw: &str) -> Result<Self, IbanError> {
-        let compact: String = raw
-            .chars()
-            .filter(|c| !c.is_whitespace() && *c != '-')
-            .map(|c| c.to_ascii_uppercase())
-            .collect();
+        let mut buf = [0u8; 24];
+        let mut len = 0usize;
+        let mut all_ascii = true;
 
-        if compact.is_empty() {
+        for ch in raw.chars().filter(|c| !c.is_whitespace() && *c != '-') {
+            if ch.is_ascii() {
+                if len < buf.len() {
+                    buf[len] = ch.to_ascii_uppercase() as u8;
+                }
+            } else {
+                all_ascii = false;
+            }
+            len += 1;
+        }
+
+        if len == 0 {
             return Err(IbanError::Empty);
         }
-        if !compact.starts_with("RO") {
-            return Err(IbanError::NotRomanianCountryCode);
+        if len < 2 || !all_ascii && len == 2 || &buf[..2] != b"RO" {
+            // Double check first 2 non-ws/non-hyphen chars directly when non-ASCII appears later
+            let mut prefix = raw.chars().filter(|c| !c.is_whitespace() && *c != '-');
+            let is_ro = matches!(
+                (prefix.next(), prefix.next()),
+                (Some('R' | 'r'), Some('O' | 'o'))
+            );
+            if !is_ro {
+                return Err(IbanError::NotRomanianCountryCode);
+            }
         }
-        if compact.len() != 24 {
-            return Err(IbanError::InvalidLength { len: compact.len() });
+        if len != 24 {
+            return Err(IbanError::InvalidLength { len });
         }
-
-        let bytes = compact.as_bytes();
-        if !bytes[2..4].iter().all(u8::is_ascii_digit)
-            || !bytes[4..8].iter().all(u8::is_ascii_alphabetic)
-            || !bytes[8..24].iter().all(u8::is_ascii_alphanumeric)
+        if !all_ascii
+            || !buf[2..4].iter().all(u8::is_ascii_digit)
+            || !buf[4..8].iter().all(u8::is_ascii_alphabetic)
+            || !buf[8..24].iter().all(u8::is_ascii_alphanumeric)
         {
             return Err(IbanError::InvalidStructure);
         }
 
+        let compact = core::str::from_utf8(&buf).unwrap_or_default();
         compact.parse::<Iban>().map(Self).map_err(|_| {
-            let actual = (bytes[2] - b'0') * 10 + (bytes[3] - b'0');
+            let actual = (buf[2] - b'0') * 10 + (buf[3] - b'0');
             let expected =
                 compute_ro_iban_check_digits(&compact[4..8], &compact[8..24]).unwrap_or(0);
             IbanError::InvalidChecksum { expected, actual }
@@ -127,7 +160,7 @@ impl RoIban {
         self.0.electronic_str()
     }
 
-    /// Returns the 2-digit ISO 7064 check number (`02..=98`).
+    /// Returns the 2-digit `ISO 7064` check number (`02..=98`).
     #[must_use]
     pub fn check_digits(&self) -> u8 {
         self.0.check_digits()
@@ -166,8 +199,12 @@ impl FromStr for RoIban {
     }
 }
 
-/// Computes the two-digit ISO/IEC 7064 MOD 97-10 check digits (`02..=98`) for a Romanian IBAN
+/// Computes the two-digit `ISO/IEC 7064 MOD 97-10` check digits (`02..=98`) for a Romanian IBAN
 /// given a 4-letter `bank_code` and a 16-character alphanumeric `account`.
+///
+/// # Errors
+///
+/// Returns [`IbanError::InvalidStructure`] if `bank_code` is not 4 ASCII letters or `account` is not 16 ASCII alphanumeric characters.
 pub fn compute_ro_iban_check_digits(bank_code: &str, account: &str) -> Result<u8, IbanError> {
     if bank_code.len() != 4
         || !bank_code.bytes().all(|b| b.is_ascii_alphabetic())
@@ -188,5 +225,5 @@ pub fn compute_ro_iban_check_digits(bank_code: &str, account: &str) -> Result<u8
                 (r * 100 + u64::from(b.to_ascii_uppercase() - b'A' + 10)) % 97
             }
         });
-    Ok((98 - rem) as u8)
+    Ok(u8::try_from(98 - rem).unwrap_or(0))
 }

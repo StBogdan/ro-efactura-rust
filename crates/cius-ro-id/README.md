@@ -8,13 +8,13 @@ Parse, normalize, and verify Romanian fiscal, banking, and administrative identi
 
 ## Supported Identifiers
 
-- **`Cui`** — Fiscal Identification Code (*Cod Unic de Înregistrare* / *CIF*): 2–10 digits with optional `RO` VAT prefix, verified with the Ministry of Finance modulo-11 control key (`753217532`).
-- **`Cnp`** — Personal Numeric Code (*Cod Numeric Personal*): 13 digits with sex/century (`1`–`9`), calendar birth date, county code, and modulo-11 check digit (`279146358279`), plus `is_anaf_b2c_placeholder` for ANAF's `0000000000000` B2C placeholder (*OUG 69/2024*).
-- **`Onrc`** — Trade Register Number (*Registrul Comerțului*): supports classic `J40/1234/2022` numbers (including 2003–2008 *Law 359/2004* `DD.MM.YYYY` certificates) and the 14-character *Law 265/2022* format (`J2024001234005`).
+- **`Cui`** — Fiscal Identification Code (*Cod Unic de Înregistrare* / *CIF*): `Copy` stack value (`2`–`10` digits with optional `RO` VAT prefix), verified with the Ministry of Finance modulo-11 control key (`753217532`).
+- **`Cnp` & `CnpOrPlaceholder`** — Personal Numeric Code (*Cod Numeric Personal*): `Copy` stack types for 13-digit CNPs (sex/century `1`–`9`, calendar birth date, county code, and modulo-11 check digit `279146358279`) and ANAF's statutory `0000000000000` B2C placeholder (*OUG 69/2024*).
+- **`Onrc`** — Trade Register Number (*Registrul Comerțului*): `Copy` stack representation supporting classic `J40/1234/2022` numbers (including 2003–2008 *Law 359/2004* `DD.MM.YYYY` certificates) and the 14-character *Law 265/2022* format (`J2024001234005`).
 - **`RoIban`** — 24-character Romanian bank account (`ROkk BBBB ...`), verified with `ISO/IEC 7064 MOD 97-10`.
 - **`County`** — All 42 `ISO 3166-2:RO` subdivision codes (`RO-AB`..`RO-VN` and `RO-B`), with diacritic-insensitive fuzzy lookup (`"Timiș"` -> `County::TM`).
 - **`BucharestSector`** — ANAF `SECTOR-RO` codes (`SECTOR1`..`SECTOR6`), with fuzzy normalization (`"Sectorul 1"` -> `BucharestSector::Sector1`).
-- **`inspect_identifier`** — Auto-detects any of the identifiers above and returns structured diagnostics in English or Romanian.
+- **`inspect_identifier`** — Auto-detects any of the identifiers above and returns structured diagnostics in [`Locale::En`] or [`Locale::Ro`].
 
 ## Usage
 

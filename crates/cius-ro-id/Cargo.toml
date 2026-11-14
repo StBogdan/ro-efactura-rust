@@ -12,13 +12,18 @@ readme = "README.md"
 keywords = ["romania", "cui", "cnp", "efactura", "anaf"]
 categories = ["parser-implementations", "localization", "no-std", "finance"]
 
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = ["std"]
-std = ["thiserror/std"]
-serde = ["dep:serde", "iban_validate/serde"]
+std = []
+serde = ["dep:serde"]
 
 [dependencies]
-thiserror.workspace = true
 time.workspace = true
 iban_validate.workspace = true
 deunicode.workspace = true

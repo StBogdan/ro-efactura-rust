@@ -365,7 +365,12 @@ fn cmd_extract(pdf: &Path, output: Option<&Path>) -> ExitCode {
 }
 
 fn cmd_id(value: &str, locale: Locale, json: bool) -> ExitCode {
-    let res = inspect_identifier(value, locale.is_ro());
+    let id_loc = if locale.is_ro() {
+        cius_ro_id::Locale::Ro
+    } else {
+        cius_ro_id::Locale::En
+    };
+    let res = inspect_identifier(value, id_loc);
     if json {
         if let Err(code) = print_json(&res) {
             return code;
