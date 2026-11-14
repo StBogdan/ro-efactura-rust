@@ -6,10 +6,10 @@
 use uppsala::Parser;
 
 use crate::types::{
-    EngineReport, EngineStatus, Locale, Severity, ValidateOptions, Violation, XmlSyntax,
+    EngineId, EngineReport, EngineStatus, Locale, Severity, ValidateOptions, Violation, XmlSyntax,
 };
 
-pub(crate) const ENGINE_ID: &str = "xsd_schema";
+pub(crate) const ENGINE_ID: EngineId = EngineId::XsdSchema;
 pub(crate) const ENGINE_NAME: &str = "Official W3C XSD 1.1 Grammar Validator";
 
 pub(crate) struct XsdOutcome {
@@ -320,7 +320,7 @@ pub(crate) fn evaluate_xsd(
                 Violation {
                     code: format!("XSD-SCHEMA-{:03}", idx + 1),
                     rule_sub_id: None,
-                    engine: ENGINE_ID.to_string(),
+                    engine: ENGINE_ID,
                     severity: Severity::Fatal,
                     business_term: Some(spec_label.to_string()),
                     message: err.message.clone(),
@@ -336,7 +336,7 @@ pub(crate) fn evaluate_xsd(
         let rules_evaluated = element_checks.max(failed_count);
         XsdOutcome {
             report: EngineReport {
-                id: ENGINE_ID.to_string(),
+                id: ENGINE_ID,
                 name: ENGINE_NAME.to_string(),
                 version: spec_label.to_string(),
                 status: if failed_count == 0 {
@@ -365,7 +365,7 @@ fn fatal(
 ) -> XsdOutcome {
     XsdOutcome {
         report: EngineReport {
-            id: ENGINE_ID.to_string(),
+            id: ENGINE_ID,
             name: ENGINE_NAME.to_string(),
             version: version.to_string(),
             status: EngineStatus::Failed,
@@ -378,7 +378,7 @@ fn fatal(
         violations: vec![Violation {
             code: code.to_string(),
             rule_sub_id: None,
-            engine: ENGINE_ID.to_string(),
+            engine: ENGINE_ID,
             severity: Severity::Fatal,
             business_term: Some(term.to_string()),
             message,

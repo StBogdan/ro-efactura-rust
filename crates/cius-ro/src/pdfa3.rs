@@ -9,9 +9,9 @@ use std::collections::HashSet;
 use en16931_formats::zugferd::{self, Divergence};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
-use crate::types::{EngineReport, EngineStatus, Locale, Severity, Violation};
+use crate::types::{EngineId, EngineReport, EngineStatus, Locale, Severity, Violation};
 
-pub(crate) const ENGINE_ID: &str = "pdfa3_iso19005";
+pub(crate) const ENGINE_ID: EngineId = EngineId::Pdfa3Iso19005;
 pub(crate) const ENGINE_NAME: &str = "ISO 19005-3 (PDF/A-3) & efactura.xml Inspector";
 pub(crate) const ENGINE_VERSION: &str = "ISO 19005-3:2012";
 
@@ -84,7 +84,7 @@ impl CheckCounter {
         self.violations.push(Violation {
             code: code.to_string(),
             rule_sub_id: None,
-            engine: ENGINE_ID.to_string(),
+            engine: ENGINE_ID,
             severity,
             business_term: Some(clause.to_string()),
             message,
@@ -142,7 +142,7 @@ impl CheckCounter {
     fn into_report(self) -> (EngineReport, Vec<Violation>) {
         (
             EngineReport {
-                id: ENGINE_ID.to_string(),
+                id: ENGINE_ID,
                 name: ENGINE_NAME.to_string(),
                 version: ENGINE_VERSION.to_string(),
                 status: if self.failed == 0 {

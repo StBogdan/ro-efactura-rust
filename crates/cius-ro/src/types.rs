@@ -1,58 +1,235 @@
 //! Core public types for `cius-ro` validation options, localized diagnostics, and reports.
 
 use core::fmt;
-use core::str::FromStr;
+
+pub use cius_ro_id::{Locale, ParseLocaleError};
 
 /// Official ANAF `RO e-Factura` (`CIUS-RO 1.0.1`) `BT-24` Specification Identifier URI.
 pub const CIUS_RO_CUSTOMIZATION_ID: &str =
     "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1";
 
-/// Output language for human-readable rule descriptions, error messages, and remediation hints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
-pub enum Locale {
-    /// English (`en`).
-    #[default]
-    En,
-    /// Romanian (`ro` — *Română*).
-    Ro,
+pub(crate) trait LocalizedFmt {
+    fn fmt_locale(&self, f: &mut fmt::Formatter<'_>, locale: Locale) -> fmt::Result;
 }
 
-impl Locale {
-    /// Returns `true` when this locale is [`Locale::Ro`].
-    #[must_use]
-    pub const fn is_ro(self) -> bool {
-        matches!(self, Self::Ro)
-    }
+/// Zero-allocation [`fmt::Display`] adapter formatting a `cius-ro` error in a chosen [`Locale`].
+#[derive(Debug, Clone, Copy)]
+pub struct LocalizedDisplay<'a, E: ?Sized> {
+    err: &'a E,
+    locale: Locale,
+}
 
-    /// Returns the two-letter BCP-47 language tag (`"en"` or `"ro"`).
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::En => "en",
-            Self::Ro => "ro",
+impl<'a, E: ?Sized> LocalizedDisplay<'a, E> {
+    pub(crate) const fn new(err: &'a E, locale: Locale) -> Self {
+        Self { err, locale }
+    }
+}
+
+impl<E: LocalizedFmt + ?Sized> fmt::Display for LocalizedDisplay<'_, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.err.fmt_locale(f, self.locale)
+    }
+}
+
+macro_rules! impl_str_enum {
+    ($ty:ty, $doc:literal, { $($variant:pat => $label:literal),+ $(,)? }) => {
+        impl $ty {
+            #[doc = $doc]
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $($variant => $label,)+
+                }
+            }
+        }
+
+        impl fmt::Display for $ty {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl PartialEq<&str> for $ty {
+            fn eq(&self, other: &&str) -> bool {
+                self.as_str() == *other
+            }
+        }
+
+        impl PartialEq<str> for $ty {
+            fn eq(&self, other: &str) -> bool {
+                self.as_str() == other
+            }
+        }
+    };
+}
+
+/// Overall processing decision recommended for a validated document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
+pub enum Recommendation {
+    /// Document satisfies all configured normative checks (`"accept"`).
+    Accept,
+    /// Document failed one or more fatal checks, or warnings when `deny_warnings` is set (`"reject"`).
+    Reject,
+}
+
+impl_str_enum!(Recommendation, "Lowercase string label (`\"accept\"` or `\"reject\"`).", {
+    Self::Accept => "accept",
+    Self::Reject => "reject",
+});
+
+/// Identifier of the validation stage that produced an [`EngineReport`] or [`Violation`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum EngineId {
+    /// ISO 19005-3 (`PDF/A-3`) binary structure & `efactura.xml` inspector (`"pdfa3_iso19005"`).
+    #[cfg_attr(feature = "serde", serde(rename = "pdfa3_iso19005"))]
+    Pdfa3Iso19005,
+    /// Official W3C XML Schema (`XSD 1.1`) grammar & XXE validator (`"xsd_schema"`).
+    #[cfg_attr(feature = "serde", serde(rename = "xsd_schema"))]
+    XsdSchema,
+    /// CEN EN 16931-1 fixed-point base-10 semantic model (`"en16931_model"`).
+    #[cfg_attr(feature = "serde", serde(rename = "en16931_model"))]
+    En16931Model,
+    /// ANAF `RO e-Factura` (`CIUS-RO 1.0.1`) national rules & `cius-ro-id` checksums (`"anaf_cius_ro"`).
+    #[cfg_attr(feature = "serde", serde(rename = "anaf_cius_ro"))]
+    AnafCiusRo,
+    /// Pre-parse input gateway (`"gateway"`).
+    #[cfg_attr(feature = "serde", serde(rename = "gateway"))]
+    Gateway,
+}
+
+impl_str_enum!(
+    EngineId,
+    "Stable snake-case wire identifier (`\"pdfa3_iso19005\"`, `\"xsd_schema\"`, `\"en16931_model\"`, `\"anaf_cius_ro\"`, `\"gateway\"`).",
+    {
+        Self::Pdfa3Iso19005 => "pdfa3_iso19005",
+        Self::XsdSchema => "xsd_schema",
+        Self::En16931Model => "en16931_model",
+        Self::AnafCiusRo => "anaf_cius_ro",
+        Self::Gateway => "gateway",
+    }
+);
+
+/// Functional grouping of a normative rule in [`crate::rules::RULES`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[non_exhaustive]
+pub enum RuleCategory {
+    /// Core CIUS-RO document rules (`"core"`).
+    Core,
+    /// Party identifiers, addresses, ISO 3166-2:RO counties, and Bucharest sectors (`"party_address"`).
+    PartyAddress,
+    /// Lexical date format constraints (`"dates"`).
+    Dates,
+    /// Bounded group repetition limits (`"cardinality"`).
+    Cardinality,
+    /// Normalized character length limits (`"length"`).
+    Length,
+    /// Lexical monetary decimal precision rules (`"decimals"`).
+    Decimals,
+    /// Algorithmic Romanian fiscal/administrative checksums (`"checksum"`).
+    Checksum,
+    /// W3C XSD 1.1 grammar and ISO 19005-3 PDF/A-3 container rules (`"container_xsd"`).
+    ContainerXsd,
+}
+
+impl_str_enum!(RuleCategory, "Snake-case category identifier (`\"core\"`, `\"party_address\"`, etc.).", {
+    Self::Core => "core",
+    Self::PartyAddress => "party_address",
+    Self::Dates => "dates",
+    Self::Cardinality => "cardinality",
+    Self::Length => "length",
+    Self::Decimals => "decimals",
+    Self::Checksum => "checksum",
+    Self::ContainerXsd => "container_xsd",
+});
+
+/// Error returned when raw XML bytes cannot be decoded as UTF-8 or UTF-16.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum XmlDecodeError {
+    /// Byte stream begins with a UTF-8 BOM (`EF BB BF`) followed by invalid UTF-8 bytes.
+    InvalidUtf8AfterBom(core::str::Utf8Error),
+    /// Byte stream begins with a UTF-16 BOM (`FE FF` or `FF FE`) but has an odd byte length.
+    TruncatedUtf16 {
+        /// Detected UTF-16 byte-order label (`"UTF-16BE"` or `"UTF-16LE"`).
+        encoding: &'static str,
+    },
+    /// Byte stream begins with a UTF-16 BOM (`FE FF` or `FF FE`) followed by unpaired surrogates.
+    InvalidUtf16 {
+        /// Detected UTF-16 byte-order label (`"UTF-16BE"` or `"UTF-16LE"`).
+        encoding: &'static str,
+    },
+    /// Byte stream is not valid UTF-8.
+    InvalidUtf8(core::str::Utf8Error),
+}
+
+impl LocalizedFmt for XmlDecodeError {
+    fn fmt_locale(&self, f: &mut fmt::Formatter<'_>, locale: Locale) -> fmt::Result {
+        match (self, locale) {
+            (Self::InvalidUtf8AfterBom(err), Locale::En) => {
+                write!(f, "Invalid UTF-8 byte sequence after BOM: {err}")
+            }
+            (Self::InvalidUtf8AfterBom(err), Locale::Ro) => {
+                write!(f, "Secvență UTF-8 invalidă după marcajul BOM: {err}")
+            }
+            (Self::TruncatedUtf16 { encoding }, Locale::En) => {
+                write!(
+                    f,
+                    "Truncated {encoding} XML payload (odd number of bytes after BOM)."
+                )
+            }
+            (Self::TruncatedUtf16 { encoding }, Locale::Ro) => {
+                write!(
+                    f,
+                    "Conținut XML {encoding} trunchiat (număr impar de octeți după BOM)."
+                )
+            }
+            (Self::InvalidUtf16 { encoding }, Locale::En) => {
+                write!(f, "Invalid {encoding} surrogate sequence in XML payload.")
+            }
+            (Self::InvalidUtf16 { encoding }, Locale::Ro) => {
+                write!(f, "Secvență surogat {encoding} invalidă în documentul XML.")
+            }
+            (Self::InvalidUtf8(err), Locale::En) => {
+                write!(f, "XML payload is not valid UTF-8: {err}")
+            }
+            (Self::InvalidUtf8(err), Locale::Ro) => {
+                write!(f, "Documentul XML nu este codificat valid UTF-8: {err}")
+            }
         }
     }
 }
 
-impl fmt::Display for Locale {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+impl XmlDecodeError {
+    /// Returns a zero-allocation [`fmt::Display`] adapter formatted in `locale`.
+    #[must_use]
+    pub const fn display(&self, locale: Locale) -> LocalizedDisplay<'_, Self> {
+        LocalizedDisplay::new(self, locale)
+    }
+
+    /// Formats a localized diagnostic message in `locale`.
+    #[must_use]
+    pub fn message(&self, locale: Locale) -> String {
+        self.display(locale).to_string()
     }
 }
 
-impl FromStr for Locale {
-    type Err = String;
+impl fmt::Display for XmlDecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_locale(f, Locale::En)
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let low = s.trim().to_ascii_lowercase();
-        if low == "en" || low.starts_with("en-") || low.starts_with("en_") {
-            Ok(Self::En)
-        } else if low == "ro" || low.starts_with("ro-") || low.starts_with("ro_") {
-            Ok(Self::Ro)
-        } else {
-            Err(format!("unsupported locale '{s}'; expected 'en' or 'ro'"))
+impl std::error::Error for XmlDecodeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidUtf8AfterBom(err) | Self::InvalidUtf8(err) => Some(err),
+            Self::TruncatedUtf16 { .. } | Self::InvalidUtf16 { .. } => None,
         }
     }
 }
@@ -70,23 +247,11 @@ pub enum Severity {
     Info,
 }
 
-impl Severity {
-    /// Uppercase string label (`"FATAL"`, `"WARNING"`, `"INFO"`).
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Fatal => "FATAL",
-            Self::Warning => "WARNING",
-            Self::Info => "INFO",
-        }
-    }
-}
-
-impl fmt::Display for Severity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_str_enum!(Severity, "Uppercase string label (`\"FATAL\"`, `\"WARNING\"`, `\"INFO\"`).", {
+    Self::Fatal => "FATAL",
+    Self::Warning => "WARNING",
+    Self::Info => "INFO",
+});
 
 /// Execution status of an individual verification stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -101,6 +266,12 @@ pub enum EngineStatus {
     Skipped,
 }
 
+impl_str_enum!(EngineStatus, "Uppercase wire status label (`\"PASSED\"`, `\"FAILED\"`, `\"SKIPPED\"`).", {
+    Self::Passed => "PASSED",
+    Self::Failed => "FAILED",
+    Self::Skipped => "SKIPPED",
+});
+
 /// Detected EN 16931 XML syntax binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -109,7 +280,7 @@ pub enum XmlSyntax {
     UblInvoice,
     /// OASIS UBL 2.1 `<CreditNote>`.
     UblCreditNote,
-    /// UN/CEFACT CrossIndustryInvoice D16B `<CrossIndustryInvoice>`.
+    /// UN/CEFACT `CrossIndustryInvoice` D16B `<CrossIndustryInvoice>`.
     CiiD16B,
 }
 
@@ -142,6 +313,11 @@ pub enum ContainerKind {
     PdfA3,
 }
 
+impl_str_enum!(ContainerKind, "Uppercase container label (`\"XML\"` or `\"PDFA3\"`).", {
+    Self::Xml => "XML",
+    Self::PdfA3 => "PDFA3",
+});
+
 /// Extracted business identity fields (`BT-1`, `BT-2`, `BT-27`) when readable.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -163,8 +339,8 @@ pub struct DocumentIdentity {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
 pub struct EngineReport {
-    /// Stable engine identifier (`"pdfa3_iso19005"`, `"xsd_schema"`, `"en16931_model"`, `"anaf_cius_ro"`).
-    pub id: String,
+    /// Stage identifier (`"pdfa3_iso19005"`, `"xsd_schema"`, `"en16931_model"`, `"anaf_cius_ro"`).
+    pub id: EngineId,
     /// Human-readable engine name.
     pub name: String,
     /// Specification version evaluated.
@@ -185,9 +361,14 @@ pub struct EngineReport {
 }
 
 impl EngineReport {
-    pub(crate) fn skipped(id: &str, name: &str, version: &str, reason: impl Into<String>) -> Self {
+    pub(crate) fn skipped(
+        id: EngineId,
+        name: &str,
+        version: &str,
+        reason: impl Into<String>,
+    ) -> Self {
         Self {
-            id: id.to_string(),
+            id,
             name: name.to_string(),
             version: version.to_string(),
             status: EngineStatus::Skipped,
@@ -211,7 +392,7 @@ pub struct Violation {
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub rule_sub_id: Option<String>,
     /// Engine stage that produced this finding.
-    pub engine: String,
+    pub engine: EngineId,
     /// Severity level (`Fatal`, `Warning`, `Info`).
     pub severity: Severity,
     /// EN 16931 Business Term / Group or ISO clause (e.g. `"BT-37"`, `"BG-4"`, `"ISO 19005-3:6.8"`).
@@ -235,6 +416,10 @@ pub struct Violation {
 
 /// Configuration controlling how [`crate::validate_bytes`] and [`crate::validate_xml`] inspect a document.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent toggles for each validation stage and policy flag"
+)]
 pub struct ValidateOptions {
     /// Output language for messages and hints (`Locale::En` by default).
     pub locale: Locale,
@@ -248,20 +433,28 @@ pub struct ValidateOptions {
     pub run_cius_ro_rules: bool,
     /// Run `cius-ro-id` algorithmic checksum verifications (`CUI`, `CNP`, `ONRC`, `RO IBAN`) (`true` by default).
     pub run_checksums: bool,
-    /// Enforce `BR-RO-050` requiring `PaymentMeansCode` (`BT-81`) (`true` by default).
-    pub require_payment_means: bool,
     /// Require `BT-24` to equal [`CIUS_RO_CUSTOMIZATION_ID`] as a `Fatal` rule (`true` by default).
-    /// When `false` (multi-standard router mode), a domestic `RO`->`RO` invoice declaring another
-    /// EN 16931 profile (e.g. Factur-X) receives a `Warning` `BR-RO-001` instead of a `Fatal` rejection.
+    /// When `false` (multi-standard router mode), a Romanian-context invoice declaring another
+    /// EN 16931 profile (e.g. Factur-X) receives a `Warning` `BR-RO-001` instead of a `Fatal` rejection,
+    /// while non-Romanian invoices omit `BR-RO-001` and skip `BR-RO-*` rules (checksums still run if enabled).
     pub strict_cius_ro_customization: bool,
     /// Escalate `Warning` findings so any warning also marks `is_valid = false` (`false` by default).
     pub deny_warnings: bool,
-    /// Generate OASIS Schematron Validation Report Language (`SVRL`) XML output (`false` by default).
+    /// Generate OASIS Schematron Validation Report Language (`SVRL`) XML output (`false` by default;
+    /// requires crate feature `svrl`, enabled by default).
     pub include_svrl: bool,
 }
 
 impl Default for ValidateOptions {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ValidateOptions {
+    /// Creates default validation options (`Locale::En`, all stages enabled, `deny_warnings = false`).
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             locale: Locale::En,
             run_pdfa: true,
@@ -269,22 +462,79 @@ impl Default for ValidateOptions {
             run_en16931: true,
             run_cius_ro_rules: true,
             run_checksums: true,
-            require_payment_means: true,
             strict_cius_ro_customization: true,
             deny_warnings: false,
             include_svrl: false,
         }
     }
-}
 
-impl ValidateOptions {
     /// Creates default validation options with the specified [`Locale`].
     #[must_use]
-    pub fn with_locale(locale: Locale) -> Self {
-        Self {
-            locale,
-            ..Self::default()
-        }
+    pub const fn with_locale(locale: Locale) -> Self {
+        Self::new().locale(locale)
+    }
+
+    /// Sets the diagnostic output [`Locale`].
+    #[must_use]
+    pub const fn locale(mut self, locale: Locale) -> Self {
+        self.locale = locale;
+        self
+    }
+
+    /// Enables or disables ISO 19005-3 (`PDF/A-3`) structural container checks.
+    #[must_use]
+    pub const fn pdfa(mut self, enabled: bool) -> Self {
+        self.run_pdfa = enabled;
+        self
+    }
+
+    /// Enables or disables W3C XSD 1.1 grammar validation.
+    #[must_use]
+    pub const fn xsd(mut self, enabled: bool) -> Self {
+        self.run_xsd = enabled;
+        self
+    }
+
+    /// Enables or disables CEN EN 16931 semantic model evaluation.
+    #[must_use]
+    pub const fn en16931(mut self, enabled: bool) -> Self {
+        self.run_en16931 = enabled;
+        self
+    }
+
+    /// Enables or disables ANAF `CIUS-RO 1.0.1` (`BR-RO-*`) national rules.
+    #[must_use]
+    pub const fn cius_ro_rules(mut self, enabled: bool) -> Self {
+        self.run_cius_ro_rules = enabled;
+        self
+    }
+
+    /// Enables or disables `cius-ro-id` fiscal checksum verifications.
+    #[must_use]
+    pub const fn checksums(mut self, enabled: bool) -> Self {
+        self.run_checksums = enabled;
+        self
+    }
+
+    /// Configures whether a non-`CIUS-RO` `BT-24` identifier is treated as `Fatal` (`true`) or `Warning` (`false`).
+    #[must_use]
+    pub const fn strict_cius_ro_customization(mut self, enabled: bool) -> Self {
+        self.strict_cius_ro_customization = enabled;
+        self
+    }
+
+    /// Escalates advisory warnings so any warning marks `is_valid = false`.
+    #[must_use]
+    pub const fn deny_warnings(mut self, enabled: bool) -> Self {
+        self.deny_warnings = enabled;
+        self
+    }
+
+    /// Requests generation of an OASIS SVRL XML report in [`ValidationReport::svrl_xml`].
+    #[must_use]
+    pub const fn include_svrl(mut self, enabled: bool) -> Self {
+        self.include_svrl = enabled;
+        self
     }
 }
 
@@ -295,8 +545,8 @@ impl ValidateOptions {
 pub struct ValidationReport {
     /// `true` if zero `Fatal` violations occurred (and zero `Warning`s when `deny_warnings` is set).
     pub is_valid: bool,
-    /// Overall processing recommendation (`"accept"` or `"reject"`).
-    pub recommendation: String,
+    /// Overall processing recommendation (`Recommendation::Accept` or `Recommendation::Reject`).
+    pub recommendation: Recommendation,
     /// Language used to format messages and hints.
     pub locale: Locale,
     /// Detected input container (`Xml` or `PdfA3`).
@@ -314,7 +564,7 @@ pub struct ValidationReport {
     pub engines: Vec<EngineReport>,
     /// All normative and checksum findings in deterministic order.
     pub violations: Vec<Violation>,
-    /// Optional SVRL XML report when `include_svrl = true`.
+    /// Optional SVRL XML report when `include_svrl = true` and crate feature `svrl` is enabled.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub svrl_xml: Option<String>,
 }

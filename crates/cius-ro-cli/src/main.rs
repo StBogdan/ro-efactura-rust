@@ -177,14 +177,11 @@ fn cmd_check(
     run_pdfa: bool,
     deny_warnings: bool,
 ) -> ExitCode {
-    let opts = ValidateOptions {
-        locale,
-        run_xsd,
-        run_pdfa,
-        deny_warnings,
-        include_svrl: format == OutputFormat::Svrl,
-        ..ValidateOptions::default()
-    };
+    let opts = ValidateOptions::with_locale(locale)
+        .xsd(run_xsd)
+        .pdfa(run_pdfa)
+        .deny_warnings(deny_warnings)
+        .include_svrl(format == OutputFormat::Svrl);
 
     let mut results = Vec::with_capacity(paths.len());
     for p in paths {

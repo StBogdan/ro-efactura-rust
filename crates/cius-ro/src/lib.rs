@@ -1,25 +1,26 @@
-//! # `cius-ro` — Pure-Rust Romanian ANAF `RO e-Factura` (`CIUS-RO 1.0.1`) Validator
+//! Electronic invoice validator for Romania's **ANAF `RO e-Factura`** specification
+//! (`CIUS-RO 1.0.1` / `ROeFactura v1.0.9`).
 //!
-//! Pure-Rust, zero-JVM, in-memory e-invoice validator for Romania's **ANAF `RO e-Factura`**
-//! national specification (`CIUS-RO 1.0.1` / `ROeFactura v1.0.9`), combining four deterministic layers:
+//! Runs four verification layers over standalone XML (`OASIS UBL 2.1` / `UN/CEFACT CII D16B`) or
+//! hybrid `PDF/A-3` containers:
 //!
 //! 1. **ISO 19005-3 (`PDF/A-3`) & Hybrid `efactura.xml` Extraction** (`feature = "pdfa3"`):
-//!    Inspects binary PDF headers, encryption prohibition, trailer `/ID`, stream filters, `GTS_PDFA1` ICC
-//!    color profiles, embedded TrueType/OpenType font programs, unfiltered XMP `pdfaid:part=3`, and
-//!    extracts `efactura.xml` / `factur-x.xml`.
-//! 2. **Official W3C XML Schema (`XSD 1.1`) Grammar & XXE Defense** (`feature = "xsd"`):
-//!    Validates against embedded OASIS UBL 2.1 (`Invoice`, `CreditNote`) and UN/CEFACT CII D16B schemas.
-//! 3. **CEN EN 16931-1 Fixed-Point Base-10 Semantic Model** (`en16931` + `en16931-formats`):
-//!    Exact `rust_decimal` monetary rounding, VAT breakdown math, and EN 16931 core business rules.
-//! 4. **Complete ANAF `CIUS-RO 1.0.1` (`BR-RO-*`) & `cius-ro-id` Checksums**:
-//!    All 122 official ANAF `ROeFactura v1.0.9` assertions (`BR-RO-001`..`210`, `BR-RO-DT*`, `BR-RO-A*`,
-//!    `BR-RO-L*`, `BR-RO-Z2`, `BR-RO-050`) plus Romanian `CUI` modulo-11, `CNP` / `0000000000000`, `ONRC`,
-//!    and `RO` IBAN (`ISO 7064 MOD 97-10`) checks, with bilingual English (`en`) and Romanian (`ro`) diagnostics.
-//!
-//! *Validator pur în Rust (fără JVM, complet în memorie) pentru facturile electronice **ANAF RO e-Factura**
-//! (`CIUS-RO 1.0.1` / `ROeFactura v1.0.9`), incluzând modelul semantic EN 16931 în virgulă fixă baza 10,
-//! toate regulile naționale `BR-RO-*`, validare XSD 1.1 (UBL 2.1 și CII D16B), extracția `efactura.xml`
-//! din containere hibride PDF/A-3 și mesaje bilingve (română / engleză).*
+//!    Checks PDF headers, encryption prohibition, trailer `/ID`, stream filters, `GTS_PDFA1` ICC
+//!    color profiles, embedded TrueType/OpenType font programs, and XMP `pdfaid:part=3`, then
+//!    extracts `efactura.xml` / `factur-x.xml` under bounded decompression budgets.
+//! 2. **W3C XML Schema (`XSD 1.1`) Grammar & XXE Defense** (`feature = "xsd"`):
+//!    Validates against bundled OASIS UBL 2.1 (`Invoice`, `CreditNote`) and UN/CEFACT CII D16B
+//!    schemas (compiled once per process via an ephemeral temporary directory on native targets;
+//!    on `wasm32-unknown-unknown`, XML well-formedness and `DOCTYPE`/`ENTITY` XXE gates run in
+//!    memory and multi-file XSD compilation is skipped).
+//! 3. **CEN EN 16931-1 Semantic Model** (`en16931` + `en16931-formats`):
+//!    Base-10 fixed-point (`rust_decimal`) monetary rounding, VAT breakdown math, and EN 16931
+//!    core business rules.
+//! 4. **ANAF `CIUS-RO 1.0.1` (`BR-RO-*`) & `cius-ro-id` Checksums**:
+//!    All 122 official ANAF `ROeFactura v1.0.9` assertions (`BR-RO-001`..`210`, `BR-RO-DT*`,
+//!    `BR-RO-A*`, `BR-RO-L*`, `BR-RO-Z2`) plus Romanian `CUI` modulo-11, `CNP` / `0000000000000`,
+//!    `ONRC`, and `RO` IBAN (`ISO 7064 MOD 97-10`) checks, with English (`en`) and Romanian (`ro`)
+//!    diagnostics.
 //!
 //! ## Example
 //!
@@ -89,14 +90,12 @@
 //! assert!(report.is_valid, "Unexpected violations: {:?}", report.violations);
 //! ```
 
-#![forbid(unsafe_code)]
-#![warn(missing_docs)]
-
 pub mod br_ro;
 #[cfg(feature = "pdfa3")]
 pub mod pdfa3;
 pub mod rules;
 pub mod semantic;
+mod stage_acc;
 pub mod types;
 #[cfg(feature = "xsd")]
 pub mod xsd;
@@ -104,31 +103,42 @@ pub mod xsd;
 pub use cius_ro_id;
 
 pub use br_ro::{
-    decode_xml_bytes, detect_root_syntax_and_bt24, evaluate_cius_ro_rules, BrRoOutcome,
+    BrRoOutcome, decode_xml_bytes, detect_root_syntax_and_bt24, evaluate_cius_ro_rules,
 };
 #[cfg(feature = "pdfa3")]
-pub use pdfa3::{extract_xml_from_pdf, inspect_pdfa3, ExtractedPdfXml, PdfInspectionOutcome};
-pub use rules::{find_rule, render_rules_markdown, RuleDescriptor, RuleView, RULES};
+pub use pdfa3::{ExtractedPdfXml, PdfInspectionOutcome, extract_xml_from_pdf, inspect_pdfa3};
+pub use rules::{RULES, RuleDescriptor, RuleView, find_rule, render_rules_markdown};
+#[cfg(feature = "svrl")]
 pub use semantic::render_svrl_report;
 pub use types::{
-    ContainerKind, DocumentIdentity, EngineReport, EngineStatus, Locale, Severity, ValidateOptions,
-    ValidationReport, Violation, XmlSyntax, CIUS_RO_CUSTOMIZATION_ID,
+    CIUS_RO_CUSTOMIZATION_ID, ContainerKind, DocumentIdentity, EngineId, EngineReport,
+    EngineStatus, Locale, LocalizedDisplay, ParseLocaleError, Recommendation, RuleCategory,
+    Severity, ValidateOptions, ValidationReport, Violation, XmlDecodeError, XmlSyntax,
 };
 #[cfg(feature = "xsd")]
 pub use xsd::warm_xsd_validators;
 
-const PDFA_ENGINE_ID: &str = "pdfa3_iso19005";
+const PDFA_ENGINE_ID: EngineId = EngineId::Pdfa3Iso19005;
 const PDFA_ENGINE_NAME: &str = "ISO 19005-3 (PDF/A-3) & efactura.xml Inspector";
 const PDFA_ENGINE_VER: &str = "ISO 19005-3:2012";
 
 /// Auto-detects whether `bytes` is a standalone XML invoice or a hybrid PDF/A-3 document (`%PDF-`)
-/// and runs all configured verification layers strictly in memory.
+/// and runs all configured verification layers on the byte slice (on native targets, embedded XSD
+/// schemas are compiled once per process via an ephemeral temporary directory on first use).
 #[must_use]
 pub fn validate_bytes(bytes: &[u8], opts: &ValidateOptions) -> ValidationReport {
     if bytes.is_empty() {
-        let msg = match opts.locale {
-            Locale::En => "Input payload is empty (0 bytes).",
-            Locale::Ro => "Fișierul de intrare este gol (0 octeți).",
+        let (msg, expected, actual) = match opts.locale {
+            Locale::En => (
+                "Input payload is empty (0 bytes).",
+                "XML e-invoice or PDF/A-3 hybrid invoice",
+                "0 bytes",
+            ),
+            Locale::Ro => (
+                "Fișierul de intrare este gol (0 octeți).",
+                "Factură electronică XML sau container hibrid PDF/A-3",
+                "0 octeți",
+            ),
         };
         return reject_report(
             ContainerKind::Xml,
@@ -137,13 +147,13 @@ pub fn validate_bytes(bytes: &[u8], opts: &ValidateOptions) -> ValidationReport 
             vec![Violation {
                 code: "INPUT-EMPTY".to_string(),
                 rule_sub_id: None,
-                engine: "gateway".to_string(),
+                engine: EngineId::Gateway,
                 severity: Severity::Fatal,
                 business_term: None,
                 message: msg.to_string(),
                 location: None,
-                expected: Some("XML e-invoice or PDF/A-3 hybrid invoice".to_string()),
-                actual: Some("0 bytes".to_string()),
+                expected: Some(expected.to_string()),
+                actual: Some(actual.to_string()),
                 hint: None,
             }],
         );
@@ -214,7 +224,7 @@ fn validate_pdf_container(bytes: &[u8], opts: &ValidateOptions) -> ValidationRep
             vec![Violation {
                 code: "PDFA3-FEATURE-DISABLED".to_string(),
                 rule_sub_id: None,
-                engine: PDFA_ENGINE_ID.to_string(),
+                engine: PDFA_ENGINE_ID,
                 severity: Severity::Fatal,
                 business_term: None,
                 message: msg.to_string(),
@@ -227,18 +237,29 @@ fn validate_pdf_container(bytes: &[u8], opts: &ValidateOptions) -> ValidationRep
     }
 }
 
+fn maybe_render_svrl(opts: &ValidateOptions, violations: &[Violation]) -> Option<String> {
+    #[cfg(feature = "svrl")]
+    {
+        opts.include_svrl
+            .then(|| semantic::render_svrl_report(violations))
+    }
+    #[cfg(not(feature = "svrl"))]
+    {
+        let _ = (opts, violations);
+        None
+    }
+}
+
 fn reject_report(
     container: ContainerKind,
     opts: &ValidateOptions,
     engines: Vec<EngineReport>,
     violations: Vec<Violation>,
 ) -> ValidationReport {
-    let svrl_xml = opts
-        .include_svrl
-        .then(|| semantic::render_svrl_report(&violations));
+    let svrl_xml = maybe_render_svrl(opts, &violations);
     ValidationReport {
         is_valid: false,
-        recommendation: "reject".to_string(),
+        recommendation: Recommendation::Reject,
         locale: opts.locale,
         container,
         detected_syntax: None,
@@ -271,10 +292,9 @@ fn validate_xml_internal(
         .as_deref()
         .ok()
         .and_then(|s| roxmltree::Document::parse(s).ok());
-    let (mut syntax, mut customization_id) = parsed_doc
-        .as_ref()
-        .map(|d| br_ro::detect_root_syntax_and_bt24(d.root_element()))
-        .unwrap_or((None, None));
+    let (mut syntax, mut customization_id) = parsed_doc.as_ref().map_or((None, None), |d| {
+        br_ro::detect_root_syntax_and_bt24(d.root_element())
+    });
 
     #[cfg(feature = "xsd")]
     {
@@ -286,7 +306,7 @@ fn validate_xml_internal(
     {
         let _ = &decoded;
         engines.push(EngineReport::skipped(
-            "xsd_schema",
+            EngineId::XsdSchema,
             "Official W3C XSD 1.1 Grammar Validator",
             "W3C XSD 1.1",
             "Feature 'xsd' disabled at compile time",
@@ -299,10 +319,10 @@ fn validate_xml_internal(
     engines.push(en_out.report);
     violations.extend(en_out.violations);
 
-    let ro_out = match parsed_doc.as_ref() {
-        Some(doc) => br_ro::evaluate_parsed(xml_bytes, doc, pre_invoice, opts),
-        None => br_ro::skipped_for_unparsed(opts),
-    };
+    let ro_out = parsed_doc.as_ref().map_or_else(
+        || br_ro::skipped_for_unparsed(opts),
+        |doc| br_ro::evaluate_parsed(xml_bytes, doc, pre_invoice, opts),
+    );
     syntax = syntax.or(ro_out.syntax);
     customization_id = customization_id.or(ro_out.customization_id);
     engines.push(ro_out.report);
@@ -310,14 +330,16 @@ fn validate_xml_internal(
 
     let has_fatal = violations.iter().any(|v| v.severity == Severity::Fatal);
     let has_warning = violations.iter().any(|v| v.severity == Severity::Warning);
-    let is_valid = !has_fatal && !(opts.deny_warnings && has_warning);
-    let svrl_xml = opts
-        .include_svrl
-        .then(|| semantic::render_svrl_report(&violations));
+    let is_valid = !(has_fatal || opts.deny_warnings && has_warning);
+    let svrl_xml = maybe_render_svrl(opts, &violations);
 
     ValidationReport {
         is_valid,
-        recommendation: if is_valid { "accept" } else { "reject" }.to_string(),
+        recommendation: if is_valid {
+            Recommendation::Accept
+        } else {
+            Recommendation::Reject
+        },
         locale: opts.locale,
         container,
         detected_syntax: syntax,
@@ -336,4 +358,10 @@ mod readme_doctests {
 
     #[doc = include_str!("../README.ro.md")]
     struct ReadmeRo;
+
+    #[doc = include_str!("../../../README.md")]
+    struct WorkspaceReadmeEn;
+
+    #[doc = include_str!("../../../README.ro.md")]
+    struct WorkspaceReadmeRo;
 }

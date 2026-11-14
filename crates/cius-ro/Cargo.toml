@@ -1,6 +1,6 @@
 [package]
 name = "cius-ro"
-description = "Pure-Rust ANAF RO e-Factura (CIUS-RO 1.0.1) e-invoice validator: EN 16931 fixed-point model, complete BR-RO-* rules, UBL 2.1 / CII D16B XSD, and hybrid efactura.xml PDF/A-3 inspection"
+description = "ANAF RO e-Factura (CIUS-RO 1.0.1) e-invoice validator: EN 16931 fixed-point model, BR-RO-* rules, UBL 2.1 / CII D16B XSD, and hybrid efactura.xml PDF/A-3 inspection"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,10 +11,14 @@ authors.workspace = true
 readme = "README.md"
 keywords = ["efactura", "cius-ro", "anaf", "en16931", "ubl"]
 categories = ["parser-implementations", "encoding", "finance", "localization"]
+exclude = ["tests/fixtures/**"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
-default = ["xsd", "pdfa3", "serde"]
-xsd = ["dep:uppsala"]
+default = ["xsd", "pdfa3", "serde", "svrl"]
+xsd = ["dep:uppsala", "dep:tempfile"]
 pdfa3 = ["dep:lopdf", "dep:ttf-parser", "en16931-formats/zugferd"]
 wasm-js = ["lopdf?/wasm_js"]
 serde = ["dep:serde", "cius-ro-id/serde", "en16931/serde", "en16931-formats/serde"]
@@ -27,12 +31,15 @@ en16931-formats.workspace = true
 roxmltree.workspace = true
 
 uppsala = { workspace = true, optional = true }
-lopdf = { workspace = true, optional = true }
 ttf-parser = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
-tempfile.workspace = true
+lopdf = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+lopdf = { workspace = true, optional = true, features = ["wasm_js"] }
 
 [dev-dependencies]
 serde_json.workspace = true

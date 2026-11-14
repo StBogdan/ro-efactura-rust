@@ -1,17 +1,19 @@
 //! Fixed-point base-10 CEN EN 16931 semantic model evaluation (`en16931` + `en16931-formats`)
 //! and OASIS Schematron Validation Report Language (`SVRL`) XML serializer.
 
+#[cfg(feature = "svrl")]
 use std::borrow::Cow;
 
-use en16931::{profiles, Severity as EnSeverity};
-use en16931_formats::{report::Report, Policy};
+use en16931::{Severity as EnSeverity, profiles};
+use en16931_formats::{Policy, report::Report};
 
+use crate::stage_acc::{StageAcc, StageFinding};
 use crate::types::{
-    DocumentIdentity, EngineReport, EngineStatus, Locale, Severity, ValidateOptions, Violation,
-    CIUS_RO_CUSTOMIZATION_ID,
+    CIUS_RO_CUSTOMIZATION_ID, DocumentIdentity, EngineId, EngineReport, Locale, Severity,
+    ValidateOptions, Violation,
 };
 
-pub(crate) const ENGINE_ID: &str = "en16931_model";
+pub(crate) const ENGINE_ID: EngineId = EngineId::En16931Model;
 pub(crate) const ENGINE_NAME: &str = "CEN EN 16931 Fixed-Point Semantic Model";
 pub(crate) const ENGINE_VERSION: &str = "EN 16931-1:2017+A1:2019 (v1.3.17)";
 
@@ -60,47 +62,61 @@ pub(crate) fn evaluate_en16931(
             }
         });
 
-    let mut violations = Vec::new();
-    let (mut rules_evaluated, mut failed_count, mut warning_count) = (0usize, 0usize, 0usize);
-
-    collect_en_report(
-        &received.report_declared,
-        &mut violations,
-        &mut rules_evaluated,
-        &mut failed_count,
-        &mut warning_count,
-        false,
-    );
+    let mut acc = StageAcc::new(ENGINE_ID, ENGINE_NAME, ENGINE_VERSION, opts.locale);
+    collect_en_report(&received.report_declared, &mut acc, false);
     if let Some(req_rep) = &received.report_required {
-        collect_en_report(
-            req_rep,
-            &mut violations,
-            &mut rules_evaluated,
-            &mut failed_count,
-            &mut warning_count,
-            true,
+        collect_en_report(req_rep, &mut acc, true);
+    }
+
+    if let Some((code, message, actual)) = check_bt24_declaration(
+        received.declared.as_ref(),
+        is_cius_ro,
+        opts.run_cius_ro_rules,
+        acc.locale(),
+    ) {
+        acc.record(
+            StageFinding::fatal(code, message)
+                .term("BT-24")
+                .location("BT-24")
+                .expected(CIUS_RO_CUSTOMIZATION_ID)
+                .maybe_actual(actual),
         );
     }
 
-    let bt24_err = match &received.declared {
-        Some(profiles::Declaration::Unknown(opt_id)) if !is_cius_ro && !opts.run_cius_ro_rules => {
-            let msg = match (opt_id, opts.locale) {
+    let (report, violations) = acc.into_report();
+    En16931Outcome {
+        report,
+        identity,
+        invoice: received.invoice,
+        violations,
+    }
+}
+
+fn check_bt24_declaration(
+    declared: Option<&profiles::Declaration>,
+    is_cius_ro: bool,
+    run_cius_ro_rules: bool,
+    locale: Locale,
+) -> Option<(&'static str, String, Option<String>)> {
+    match declared {
+        Some(profiles::Declaration::Unknown(opt_id)) if !is_cius_ro && !run_cius_ro_rules => {
+            let msg = match (opt_id, locale) {
                 (Some(v), Locale::En) => format!(
                     "Specification identifier (BT-24) '{v}' is not a recognized EN 16931 / CIUS-RO URI."
                 ),
                 (Some(v), Locale::Ro) => format!(
                     "Identificatorul specificației (BT-24) '{v}' nu este un profil EN 16931 / CIUS-RO recunoscut."
                 ),
-                (None, Locale::En) => "Specification identifier (BT-24) is missing.".to_string(),
-                (None, Locale::Ro) => "Identificatorul specificației (BT-24) lipsește.".to_string(),
+                (None, Locale::En) => "Specification identifier (BT-24) is missing.".to_owned(),
+                (None, Locale::Ro) => "Identificatorul specificației (BT-24) lipsește.".to_owned(),
             };
             Some(("EN16931-BT24-PROFILE", msg, opt_id.clone()))
         }
         Some(profiles::Declaration::WrongProcess(v)) => {
-            let msg = match opts.locale {
-                Locale::En => {
-                    format!("Specification identifier (BT-24) '{v}' belongs to a non-invoice process.")
-                }
+            let msg = match locale {
+                Locale::En => format!(
+                    "Specification identifier (BT-24) '{v}' belongs to a non-invoice process."
+                ),
                 Locale::Ro => format!(
                     "Identificatorul specificației (BT-24) '{v}' aparține unui alt proces decât facturarea."
                 ),
@@ -108,56 +124,10 @@ pub(crate) fn evaluate_en16931(
             Some(("EN16931-BT24-PROCESS", msg, Some(v.clone())))
         }
         _ => None,
-    };
-
-    if let Some((code, message, actual)) = bt24_err {
-        rules_evaluated += 1;
-        failed_count += 1;
-        violations.push(Violation {
-            code: code.to_string(),
-            rule_sub_id: None,
-            engine: ENGINE_ID.to_string(),
-            severity: Severity::Fatal,
-            business_term: Some("BT-24".to_string()),
-            message,
-            location: Some("BT-24".to_string()),
-            expected: Some(CIUS_RO_CUSTOMIZATION_ID.to_string()),
-            actual,
-            hint: None,
-        });
-    }
-
-    let eval = rules_evaluated.max(1);
-    En16931Outcome {
-        report: EngineReport {
-            id: ENGINE_ID.to_string(),
-            name: ENGINE_NAME.to_string(),
-            version: ENGINE_VERSION.to_string(),
-            status: if failed_count == 0 {
-                EngineStatus::Passed
-            } else {
-                EngineStatus::Failed
-            },
-            rules_evaluated: eval,
-            passed_count: eval.saturating_sub(failed_count),
-            failed_count,
-            warning_count,
-            skip_reason: None,
-        },
-        identity,
-        invoice: received.invoice,
-        violations,
     }
 }
 
-fn collect_en_report(
-    report: &Report,
-    violations: &mut Vec<Violation>,
-    rules_evaluated: &mut usize,
-    failed_count: &mut usize,
-    warning_count: &mut usize,
-    dedup: bool,
-) {
+fn collect_en_report(report: &Report, acc: &mut StageAcc, dedup: bool) {
     for entry in report.entries() {
         let sev = match entry.level() {
             EnSeverity::Fatal => Severity::Fatal,
@@ -169,74 +139,59 @@ fn collect_en_report(
             .clone()
             .unwrap_or_else(|| format!("EN16931-{}", entry.kind.as_str().to_ascii_uppercase()));
         if dedup
-            && violations
+            && acc
+                .violations()
                 .iter()
                 .any(|v| v.code == code && v.location.as_deref() == Some(entry.path.as_str()))
         {
             continue;
         }
-        *rules_evaluated += 1;
-        if sev == Severity::Fatal {
-            *failed_count += 1;
-        } else {
-            *warning_count += 1;
+        let mut finding = StageFinding::new(sev, &code, entry.message.clone())
+            .location(entry.path.clone())
+            .maybe_actual(entry.value.clone())
+            .maybe_hint(entry.hint.clone());
+        if let Some(term) = entry.term.as_deref() {
+            finding = finding.term(term);
         }
-        violations.push(Violation {
-            code,
-            rule_sub_id: None,
-            engine: ENGINE_ID.to_string(),
-            severity: sev,
-            business_term: entry.term.clone(),
-            message: entry.message.clone(),
-            location: Some(entry.path.clone()),
-            expected: None,
-            actual: entry.value.clone(),
-            hint: entry.hint.clone(),
-        });
+        acc.record(finding);
     }
 
     if let Some(sem_rep) = &report.semantic.report {
         if !dedup {
-            *rules_evaluated += sem_rep.rules_checked();
+            acc.add_evaluated(sem_rep.rules_checked());
         }
         for finding in sem_rep.findings() {
             let loc = finding.path.to_string();
             if dedup
-                && violations
+                && acc
+                    .violations()
                     .iter()
                     .any(|v| v.code == finding.rule && v.location.as_deref() == Some(loc.as_str()))
             {
                 continue;
             }
             let sev = match finding.severity {
-                EnSeverity::Fatal => {
-                    *failed_count += 1;
-                    Severity::Fatal
-                }
-                EnSeverity::Warning => {
-                    *warning_count += 1;
-                    Severity::Warning
-                }
+                EnSeverity::Fatal => Severity::Fatal,
+                EnSeverity::Warning => Severity::Warning,
                 EnSeverity::Info => Severity::Info,
             };
-            violations.push(Violation {
-                code: finding.rule.clone(),
-                rule_sub_id: None,
-                engine: ENGINE_ID.to_string(),
-                severity: sev,
-                business_term: Some(loc.clone()),
-                message: finding.message.clone(),
-                location: Some(loc),
-                expected: finding.detail.as_ref().map(|d| d.expected.clone()),
-                actual: finding.detail.as_ref().map(|d| d.actual.clone()),
-                hint: finding.hint.clone(),
-            });
+            let expected = finding.detail.as_ref().map(|d| d.expected.as_str());
+            let actual = finding.detail.as_ref().map(|d| d.actual.clone());
+            acc.record_uncounted(
+                StageFinding::new(sev, &finding.rule, finding.message.clone())
+                    .term(&loc)
+                    .location(loc.clone())
+                    .maybe_expected(expected)
+                    .maybe_actual(actual)
+                    .maybe_hint(finding.hint.clone()),
+            );
         }
     }
 }
 
 /// Serializes all validation findings (`EN 16931`, `CIUS-RO`, `XSD`, `PDF/A-3`, and `cius-ro-id` checksums)
 /// into a well-formed OASIS Schematron Validation Report Language (`SVRL`) XML document via `en16931::svrl`.
+#[cfg(feature = "svrl")]
 #[must_use]
 pub fn render_svrl_report(violations: &[Violation]) -> String {
     let mut rep = en16931::report::Report::unchecked();
@@ -251,7 +206,7 @@ pub fn render_svrl_report(violations: &[Violation]) -> String {
                 Severity::Warning => "warning",
                 Severity::Info => "information",
             }),
-            source: Cow::Owned(v.engine.clone()),
+            source: Cow::Borrowed(v.engine.as_str()),
             location: v.location.as_deref().unwrap_or("/").to_owned(),
             text: format!("[{}]-{}", v.code, v.message),
             expected: v.expected.clone(),

@@ -12,11 +12,11 @@ use en16931::{Date, Invoice};
 use roxmltree::{Document, Node};
 
 use crate::types::{
-    EngineReport, EngineStatus, Locale, Severity, ValidateOptions, Violation, XmlSyntax,
+    EngineId, EngineReport, EngineStatus, Locale, Severity, ValidateOptions, Violation, XmlSyntax,
     CIUS_RO_CUSTOMIZATION_ID,
 };
 
-pub(crate) const ENGINE_ID: &str = "anaf_cius_ro";
+pub(crate) const ENGINE_ID: EngineId = EngineId::AnafCiusRo;
 pub(crate) const ENGINE_NAME: &str = "ANAF RO e-Factura (CIUS-RO 1.0.1) & Checksum Engine";
 pub(crate) const ENGINE_VERSION: &str = "CIUS-RO 1.0.1 (ROeFactura v1.0.9)";
 
@@ -88,7 +88,7 @@ impl RuleAcc {
         self.violations.push(Violation {
             code: code.to_string(),
             rule_sub_id: Some(sub_id.to_string()),
-            engine: ENGINE_ID.to_string(),
+            engine: ENGINE_ID,
             severity,
             business_term: Some(term.to_string()),
             message,
@@ -126,7 +126,7 @@ impl RuleAcc {
         let eval = self.evaluated.max(1);
         (
             EngineReport {
-                id: ENGINE_ID.to_string(),
+                id: ENGINE_ID,
                 name: ENGINE_NAME.to_string(),
                 version: ENGINE_VERSION.to_string(),
                 status: if self.failed == 0 {
@@ -420,27 +420,6 @@ fn check_core_rules(
             if !code.is_empty() {
                 check_bt8_code(&code, "ram:ApplicableTradeTax/ram:TimeReferenceCode", acc);
             }
-        }
-    }
-
-    // BR-RO-050: PaymentMeansCode (BT-81) mandatory
-    if opts.require_payment_means {
-        let has_pm = inv
-            .payment
-            .as_ref()
-            .and_then(|p| p.means_code.as_ref())
-            .is_some_and(|c| !c.is_blank());
-        if has_pm {
-            acc.pass();
-        } else {
-            acc.fatal(
-                "BR-RO-050",
-                "BR-RO-050",
-                "BG-16 / BT-81",
-                "BG-16/BT-81",
-                "Payment instructions (BG-16) with a Payment means type code (BT-81) are mandatory in CIUS-RO.".to_string(),
-                "Instrucțiunile de plată (BG-16) și codul tipului instrumentului de plată (BT-81) sunt obligatorii în CIUS-RO.".to_string(),
-            );
         }
     }
 

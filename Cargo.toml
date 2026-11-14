@@ -32,7 +32,7 @@ bare_urls = "warn"
 cius-ro-id = { version = "0.1.0", path = "crates/cius-ro-id", default-features = false }
 cius-ro = { version = "0.1.0", path = "crates/cius-ro", default-features = false }
 
-en16931 = { version = "0.10", default-features = false, features = ["svrl"] }
+en16931 = { version = "0.10", default-features = false }
 en16931-formats = { version = "0.10", default-features = false, features = ["ubl", "cii"] }
 roxmltree = "0.21"
 uppsala = "0.12"
