@@ -11,7 +11,6 @@ This reference is generated directly from `cius_ro::rules::RULES` and covers all
 | [`BR-RO-020`](#br-ro-020) | `FATAL` | `BT-3` | Allowed UNTDID 1001 Document Type Codes |
 | [`BR-RO-030`](#br-ro-030) | `FATAL` | `BT-5, BT-6, BT-111` | Foreign Currency Requires RON VAT Accounting Currency |
 | [`BR-RO-040`](#br-ro-040) | `FATAL` | `BT-8` | VAT Point Date Code Restriction |
-| [`BR-RO-050`](#br-ro-050) | `FATAL` | `BG-16, BT-81` | Mandatory Payment Means Code |
 | [`BR-RO-065`](#br-ro-065) | `FATAL` | `BT-31, BT-32, BT-63` | Seller Fiscal or VAT Identifier Required |
 | [`BR-RO-080`](#br-ro-080) | `FATAL` | `BT-35, BT-50` | Seller and Buyer Address Line 1 Required |
 | [`BR-RO-090`](#br-ro-090) | `FATAL` | `BT-37, BT-52` | Seller and Buyer City Required |
@@ -91,16 +90,8 @@ This reference is generated directly from `cius_ro::rules::RULES` and covers all
 - **Category:** `core`
 - **Severity:** `FATAL`
 - **Business Terms:** `BT-8`
-- **Specification:** When present, Value added tax point date code (BT-8) must be one of 3 (Invoice issue date), 35 (Actual delivery date), or 432 (Paid to date).
-- **Remediation:** Restrict cac:InvoicePeriod/cbc:DescriptionCode to '3', '35', or '432'.
-
-## `BR-RO-050` — Mandatory Payment Means Code
-
-- **Category:** `core`
-- **Severity:** `FATAL`
-- **Business Terms:** `BG-16, BT-81`
-- **Specification:** Payment means type code (BT-81) is mandatory under CIUS-RO 1.0.1.
-- **Remediation:** Provide <cac:PaymentMeans><cbc:PaymentMeansCode> (e.g. 30, 42, 48, 58, 10).
+- **Specification:** When present, Value added tax point date code (BT-8) must be one of 3 (Invoice issue date), 35 (Actual delivery date), or 432 (Paid to date) in UBL (or 5, 29, 72 in CII DueDateTypeCode).
+- **Remediation:** Restrict cac:InvoicePeriod/cbc:DescriptionCode to '3', '35', or '432' (or CII ram:DueDateTypeCode to '5', '29', or '72').
 
 ## `BR-RO-065` — Seller Fiscal or VAT Identifier Required
 

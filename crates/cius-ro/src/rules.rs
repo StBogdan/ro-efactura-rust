@@ -1,7 +1,9 @@
 //! Normative rule catalog for ANAF `RO e-Factura` (`CIUS-RO 1.0.1` / `v1.0.9`), `cius-ro-id` checksums,
 //! W3C XSD 1.1, and ISO 19005-3 (PDF/A-3) hybrid containers — with full English & Romanian metadata.
 
-use crate::types::{Locale, Severity};
+use core::fmt::Write as _;
+
+use crate::types::{Locale, RuleCategory, Severity};
 
 /// Static metadata entry describing a validation rule in both English and Romanian.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,8 +12,8 @@ use crate::types::{Locale, Severity};
 pub struct RuleDescriptor {
     /// Canonical rule code (e.g. `"BR-RO-100"`).
     pub code: &'static str,
-    /// Functional group (`"core"`, `"party_address"`, `"dates"`, `"cardinality"`, `"length"`, `"decimals"`, `"checksum"`, `"container_xsd"`).
-    pub category: &'static str,
+    /// Functional group (`Core`, `PartyAddress`, `Dates`, `Cardinality`, `Length`, `Decimals`, `Checksum`, `ContainerXsd`).
+    pub category: RuleCategory,
     /// Default severity level.
     pub severity: Severity,
     /// Affected EN 16931 Business Terms / Groups.
@@ -81,7 +83,7 @@ pub struct RuleView<'a> {
     /// Canonical rule code (e.g. `"BR-RO-100"`).
     pub code: &'a str,
     /// Functional rule category.
-    pub category: &'a str,
+    pub category: RuleCategory,
     /// Affected EN 16931 Business Terms / Groups.
     pub business_terms: &'a str,
     /// Default severity level.
@@ -98,7 +100,7 @@ pub struct RuleView<'a> {
 pub const RULES: &[RuleDescriptor] = &[
     RuleDescriptor {
         code: "BR-RO-001",
-        category: "core",
+        category: RuleCategory::Core,
         severity: Severity::Fatal,
         business_terms: "BT-24",
         title_en: "CIUS-RO 1.0.1 Specification Identifier",
@@ -110,7 +112,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-010",
-        category: "core",
+        category: RuleCategory::Core,
         severity: Severity::Fatal,
         business_terms: "BT-1",
         title_en: "Numeric Digit in Invoice Number",
@@ -122,7 +124,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-020",
-        category: "core",
+        category: RuleCategory::Core,
         severity: Severity::Fatal,
         business_terms: "BT-3",
         title_en: "Allowed UNTDID 1001 Document Type Codes",
@@ -134,7 +136,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-030",
-        category: "core",
+        category: RuleCategory::Core,
         severity: Severity::Fatal,
         business_terms: "BT-5, BT-6, BT-111",
         title_en: "Foreign Currency Requires RON VAT Accounting Currency",
@@ -146,31 +148,19 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-040",
-        category: "core",
+        category: RuleCategory::Core,
         severity: Severity::Fatal,
         business_terms: "BT-8",
         title_en: "VAT Point Date Code Restriction",
-        title_ro: "Codul datei de exigibilitate a TVA (UNTDID 2005)",
-        description_en: "When present, Value added tax point date code (BT-8) must be one of 3 (Invoice issue date), 35 (Actual delivery date), or 432 (Paid to date).",
-        description_ro: "Dacă este prezent, codul datei de exigibilitate a TVA (BT-8) trebuie să fie 3 (Data emiterii), 35 (Data livrării efective) sau 432 (Data încasării).",
-        remediation_en: "Restrict cac:InvoicePeriod/cbc:DescriptionCode to '3', '35', or '432'.",
-        remediation_ro: "Limitați valoarea cac:InvoicePeriod/cbc:DescriptionCode la '3', '35' sau '432'.",
-    },
-    RuleDescriptor {
-        code: "BR-RO-050",
-        category: "core",
-        severity: Severity::Fatal,
-        business_terms: "BG-16, BT-81",
-        title_en: "Mandatory Payment Means Code",
-        title_ro: "Codul instrumentului de plată este obligatoriu",
-        description_en: "Payment means type code (BT-81) is mandatory under CIUS-RO 1.0.1.",
-        description_ro: "Codul tipului instrumentului de plată (BT-81) este obligatoriu în specificația CIUS-RO 1.0.1.",
-        remediation_en: "Provide <cac:PaymentMeans><cbc:PaymentMeansCode> (e.g. 30, 42, 48, 58, 10).",
-        remediation_ro: "Completați <cac:PaymentMeans><cbc:PaymentMeansCode> cu un cod UNCL4461 (ex. 30, 42, 48, 58, 10).",
+        title_ro: "Codul datei de exigibilitate a TVA (UNTDID 2005 / 2475)",
+        description_en: "When present, Value added tax point date code (BT-8) must be one of 3 (Invoice issue date), 35 (Actual delivery date), or 432 (Paid to date) in UBL (or 5, 29, 72 in CII DueDateTypeCode).",
+        description_ro: "Dacă este prezent, codul datei de exigibilitate a TVA (BT-8) trebuie să fie 3 (Data emiterii), 35 (Data livrării efective) sau 432 (Data încasării) în UBL (respectiv 5, 29 sau 72 în CII DueDateTypeCode).",
+        remediation_en: "Restrict cac:InvoicePeriod/cbc:DescriptionCode to '3', '35', or '432' (or CII ram:DueDateTypeCode to '5', '29', or '72').",
+        remediation_ro: "Limitați valoarea cac:InvoicePeriod/cbc:DescriptionCode la '3', '35' sau '432' (sau CII ram:DueDateTypeCode la '5', '29' sau '72').",
     },
     RuleDescriptor {
         code: "BR-RO-065",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-31, BT-32, BT-63",
         title_en: "Seller Fiscal or VAT Identifier Required",
@@ -182,7 +172,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-080",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-35, BT-50",
         title_en: "Seller and Buyer Address Line 1 Required",
@@ -194,7 +184,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-090",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-37, BT-52",
         title_en: "Seller and Buyer City Required",
@@ -206,7 +196,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-100",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-37, BT-39, BT-40, BT-52, BT-54, BT-55",
         title_en: "Bucharest (RO-B) City Must Use SECTOR1..SECTOR6",
@@ -218,7 +208,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-110",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-39, BT-40, BT-54, BT-55",
         title_en: "Romanian County Must Use ISO 3166-2:RO",
@@ -230,7 +220,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-120",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-47, BT-48",
         title_en: "Buyer Legal Registration or VAT Identifier Required",
@@ -242,7 +232,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-140",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BG-11, BG-12, BT-64",
         title_en: "Tax Representative Street Required",
@@ -254,7 +244,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-150",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BG-11, BG-12, BT-66",
         title_en: "Tax Representative City Required",
@@ -266,7 +256,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-160",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-66, BT-68, BT-69",
         title_en: "Tax Representative Bucharest Sector",
@@ -278,7 +268,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-170",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BT-68, BT-69",
         title_en: "Tax Representative Romanian County Code",
@@ -290,7 +280,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-180",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BG-15, BT-75",
         title_en: "Delivery Address Line 1 Required When BG-15 Exists",
@@ -302,7 +292,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-200",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BG-15, BT-77, BT-79, BT-80",
         title_en: "Delivery City & Bucharest Sector Rules",
@@ -314,7 +304,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-210",
-        category: "party_address",
+        category: RuleCategory::PartyAddress,
         severity: Severity::Fatal,
         business_terms: "BG-15, BT-79, BT-80",
         title_en: "Delivery Country Subdivision & ISO 3166-2:RO",
@@ -326,7 +316,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-DT001",
-        category: "dates",
+        category: RuleCategory::Dates,
         severity: Severity::Fatal,
         business_terms: "BT-2",
         title_en: "IssueDate Strict YYYY-MM-DD Format",
@@ -338,7 +328,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-DT002",
-        category: "dates",
+        category: RuleCategory::Dates,
         severity: Severity::Fatal,
         business_terms: "BT-7",
         title_en: "TaxPointDate Strict YYYY-MM-DD Format",
@@ -350,7 +340,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-DT003",
-        category: "dates",
+        category: RuleCategory::Dates,
         severity: Severity::Fatal,
         business_terms: "BT-9",
         title_en: "DueDate Strict YYYY-MM-DD Format",
@@ -362,7 +352,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-DT003-CN",
-        category: "dates",
+        category: RuleCategory::Dates,
         severity: Severity::Fatal,
         business_terms: "BT-9",
         title_en: "PaymentDueDate Strict YYYY-MM-DD Format",
@@ -374,7 +364,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-DT004",
-        category: "dates",
+        category: RuleCategory::Dates,
         severity: Severity::Fatal,
         business_terms: "BT-72",
         title_en: "ActualDeliveryDate Strict YYYY-MM-DD Format",
@@ -386,7 +376,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-DT005",
-        category: "dates",
+        category: RuleCategory::Dates,
         severity: Severity::Fatal,
         business_terms: "BT-73, BT-134",
         title_en: "Period StartDate Strict YYYY-MM-DD Format",
@@ -398,7 +388,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-DT006",
-        category: "dates",
+        category: RuleCategory::Dates,
         severity: Severity::Fatal,
         business_terms: "BT-74, BT-135",
         title_en: "Period EndDate Strict YYYY-MM-DD Format",
@@ -410,7 +400,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-A020",
-        category: "cardinality",
+        category: RuleCategory::Cardinality,
         severity: Severity::Fatal,
         business_terms: "BG-1",
         title_en: "Maximum 20 Invoice Notes",
@@ -422,7 +412,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-A050",
-        category: "cardinality",
+        category: RuleCategory::Cardinality,
         severity: Severity::Fatal,
         business_terms: "BG-24, BG-32",
         title_en: "Maximum 50 Supporting Documents or Item Attributes",
@@ -434,7 +424,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-A500",
-        category: "cardinality",
+        category: RuleCategory::Cardinality,
         severity: Severity::Fatal,
         business_terms: "BG-3",
         title_en: "Maximum 500 Preceding Invoice References",
@@ -446,7 +436,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L020",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-38, BT-53, BT-67, BT-78",
         title_en: "Maximum 20 Characters for Postal Codes",
@@ -458,7 +448,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L050",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-37, BT-52, BT-66, BT-77, BT-160",
         title_en: "Maximum 50 Characters for Cities & Item Attribute Names",
@@ -470,7 +460,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L100",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-19, BT-36, BT-41..43, BT-51, BT-56..58, BT-65, BT-76, BT-82, BT-97, BT-104, BT-120, BT-123, BT-133, BT-139, BT-144, BT-153, BT-161..165",
         title_en: "Maximum 100 Characters for Item Names, Contacts, Address Lines 2/3 & Reasons",
@@ -482,7 +472,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L140",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-83",
         title_en: "Maximum 140 Characters for Remittance Information",
@@ -494,7 +484,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L150",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-35, BT-50, BT-64, BT-75",
         title_en: "Maximum 150 Characters for Street Address Line 1",
@@ -506,7 +496,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L200",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-1, BT-12..18, BT-25, BT-27, BT-28, BT-44, BT-45, BT-59, BT-62, BT-70, BT-85, BT-88, BT-122, BT-124, BT-125-2, BT-154",
         title_en: "Maximum 200 Characters for Party Names, Document IDs & Item Descriptions",
@@ -518,7 +508,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L300",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-20, BT-22, BT-127",
         title_en: "Maximum 300 Characters for Payment Terms & Notes",
@@ -530,7 +520,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-L1000",
-        category: "length",
+        category: RuleCategory::Length,
         severity: Severity::Fatal,
         business_terms: "BT-33",
         title_en: "Maximum 1000 Characters for Seller Additional Legal Information",
@@ -542,7 +532,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-Z2",
-        category: "decimals",
+        category: RuleCategory::Decimals,
         severity: Severity::Fatal,
         business_terms: "BT-92, BT-93, BT-99, BT-100, BT-106..117, BT-131, BT-136, BT-137, BT-141, BT-142",
         title_en: "Maximum 2 Fractional Decimals on Monetary Amounts",
@@ -554,7 +544,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-27",
-        category: "core",
+        category: RuleCategory::Core,
         severity: Severity::Fatal,
         business_terms: "BT-146",
         title_en: "Item Net Price Must Not Be Negative",
@@ -566,7 +556,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-CUI",
-        category: "checksum",
+        category: RuleCategory::Checksum,
         severity: Severity::Warning,
         business_terms: "BT-31, BT-32, BT-47, BT-48, BT-63",
         title_en: "Romanian CUI / CIF Modulo-11 Control Digit",
@@ -578,7 +568,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-CNP",
-        category: "checksum",
+        category: RuleCategory::Checksum,
         severity: Severity::Warning,
         business_terms: "BT-47, BT-48",
         title_en: "Romanian 13-Digit CNP Checksum & Calendar Validity",
@@ -590,7 +580,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-ONRC",
-        category: "checksum",
+        category: RuleCategory::Checksum,
         severity: Severity::Warning,
         business_terms: "BT-30, BT-47",
         title_en: "Romanian ONRC Trade Register Format",
@@ -602,7 +592,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "BR-RO-IBAN",
-        category: "checksum",
+        category: RuleCategory::Checksum,
         severity: Severity::Warning,
         business_terms: "BT-84",
         title_en: "Romanian IBAN ISO 7064 MOD 97-10 Checksum",
@@ -614,7 +604,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "XSD-SCHEMA",
-        category: "container_xsd",
+        category: RuleCategory::ContainerXsd,
         severity: Severity::Fatal,
         business_terms: "UBL 2.1 / CII D16B XSD",
         title_en: "Official W3C XML Schema (XSD 1.1) Grammar & XXE Protection",
@@ -626,7 +616,7 @@ pub const RULES: &[RuleDescriptor] = &[
     },
     RuleDescriptor {
         code: "PDFA3-ISO19005",
-        category: "container_xsd",
+        category: RuleCategory::ContainerXsd,
         severity: Severity::Fatal,
         business_terms: "ISO 19005-3 / efactura.xml",
         title_en: "Hybrid PDF/A-3 Container & Associated XML Attachment",
@@ -638,11 +628,53 @@ pub const RULES: &[RuleDescriptor] = &[
     },
 ];
 
-/// Looks up a [`RuleDescriptor`] by canonical code (case-insensitive, e.g. `"BR-RO-100"`).
+/// Looks up a [`RuleDescriptor`] by canonical code or ANAF Schematron sub-ID / container clause
+/// (case-insensitive, e.g. `"BR-RO-100"`, `"BR-RO-101"`, `"BR-DEC-RO-05"`, `"BR-RO-L155"`,
+/// `"XSD-SCHEMA-001"`, or `"PDFA3-6.1.4-ENCRYPT"`).
 #[must_use]
 pub fn find_rule(code: &str) -> Option<&'static RuleDescriptor> {
     let target = code.trim();
-    RULES.iter().find(|r| r.code.eq_ignore_ascii_case(target))
+    if target.is_empty() || target.len() > 64 {
+        return None;
+    }
+
+    if let Some(exact) = RULES.iter().find(|r| r.code.eq_ignore_ascii_case(target)) {
+        return Some(exact);
+    }
+
+    let mut upper_buf = [0u8; 64];
+    for (dst, &src) in upper_buf.iter_mut().zip(target.as_bytes()) {
+        if !src.is_ascii() {
+            return None;
+        }
+        *dst = src.to_ascii_uppercase();
+    }
+    let upper = core::str::from_utf8(&upper_buf[..target.len()]).ok()?;
+
+    let canonical = match upper {
+        "BR-RO-DT003_CN" => "BR-RO-DT003-CN",
+        "BR-RO-020_1" | "BR-RO-020_2" => "BR-RO-020",
+        "BR-RO-081" | "BR-RO-082" => "BR-RO-080",
+        "BR-RO-091" | "BR-RO-092" => "BR-RO-090",
+        "BR-RO-101" => "BR-RO-100",
+        "BR-RO-111" => "BR-RO-110",
+        "BR-RO-201" | "BR-RO-202" => "BR-RO-200",
+        "BR-RO-211" | "BR-RO-212" => "BR-RO-210",
+        "BR-RO-A051" | "BR-RO-A052" => "BR-RO-A050",
+        "BR-RO-L151" | "BR-RO-L152" | "BR-RO-L153" | "BR-RO-L154" => "BR-RO-L150",
+        "BR-RO-L155" | "BR-RO-L156" => "BR-RO-L200",
+        "BR-RO-L301" | "BR-RO-L302" | "BR-RO-L303" => "BR-RO-L300",
+        s if s.starts_with("BR-DEC-RO-") => "BR-RO-Z2",
+        s if s.starts_with("BR-RO-L020") => "BR-RO-L020",
+        s if s.starts_with("BR-RO-L050") => "BR-RO-L050",
+        s if s.starts_with("BR-RO-L10") => "BR-RO-L100",
+        s if s.starts_with("BR-RO-L030") || s.starts_with("BR-RO-L2") => "BR-RO-L200",
+        s if s.starts_with("PDFA3-") => "PDFA3-ISO19005",
+        s if s.starts_with("XSD-") => "XSD-SCHEMA",
+        _ => return None,
+    };
+
+    RULES.iter().find(|r| r.code == canonical)
 }
 
 /// Renders the complete rule catalog as a GitHub-Flavored Markdown reference document in `locale`.
@@ -680,17 +712,19 @@ pub fn render_rules_markdown(locale: Locale) -> String {
     out.push_str("| :--- | :---: | :--- | :--- |\n");
     for r in RULES {
         let anchor = r.code.to_ascii_lowercase();
-        out.push_str(&format!(
-            "| [`{}`](#{anchor}) | `{}` | `{}` | {} |\n",
+        let _ = writeln!(
+            out,
+            "| [`{}`](#{anchor}) | `{}` | `{}` | {} |",
             r.code,
             r.severity,
             r.business_terms,
             r.title(locale)
-        ));
+        );
     }
     out.push_str("\n---\n\n");
     for r in RULES {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "## `{}` — {}\n\n- **{l_cat}:** `{}`\n- **{l_sev}:** `{}`\n- **{l_bt}:** `{}`\n- **{l_spec}:** {}\n- **{l_rem}:** {}\n\n",
             r.code,
             r.title(locale),
@@ -699,7 +733,7 @@ pub fn render_rules_markdown(locale: Locale) -> String {
             r.business_terms,
             r.description(locale),
             r.remediation(locale),
-        ));
+        );
     }
     out
 }

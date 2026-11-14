@@ -10,8 +10,7 @@ Acest ghid este generat automat din catalogul `cius_ro::rules::RULES` și acoper
 | [`BR-RO-010`](#br-ro-010) | `FATAL` | `BT-1` | Caracter numeric obligatoriu în numărul facturii |
 | [`BR-RO-020`](#br-ro-020) | `FATAL` | `BT-3` | Coduri permise pentru tipul facturii (UNTDID 1001) |
 | [`BR-RO-030`](#br-ro-030) | `FATAL` | `BT-5, BT-6, BT-111` | Monedă străină — contabilizare TVA obligatorie în RON |
-| [`BR-RO-040`](#br-ro-040) | `FATAL` | `BT-8` | Codul datei de exigibilitate a TVA (UNTDID 2005) |
-| [`BR-RO-050`](#br-ro-050) | `FATAL` | `BG-16, BT-81` | Codul instrumentului de plată este obligatoriu |
+| [`BR-RO-040`](#br-ro-040) | `FATAL` | `BT-8` | Codul datei de exigibilitate a TVA (UNTDID 2005 / 2475) |
 | [`BR-RO-065`](#br-ro-065) | `FATAL` | `BT-31, BT-32, BT-63` | Identificator fiscal sau de TVA al Vânzătorului obligatoriu |
 | [`BR-RO-080`](#br-ro-080) | `FATAL` | `BT-35, BT-50` | Adresa Vânzătorului și a Cumpărătorului (Linia 1) obligatorie |
 | [`BR-RO-090`](#br-ro-090) | `FATAL` | `BT-37, BT-52` | Localitatea Vânzătorului și a Cumpărătorului obligatorie |
@@ -86,21 +85,13 @@ Acest ghid este generat automat din catalogul `cius_ro::rules::RULES` și acoper
 - **Descriere normativă:** Dacă moneda facturii (BT-5) este alta decât RON, atunci moneda de contabilizare a TVA (BT-6) trebuie să fie RON, împreună cu valoarea TVA în RON (BT-111).
 - **Recomandare de remediere:** Adăugați <cbc:TaxCurrencyCode>RON</cbc:TaxCurrencyCode> și al doilea grup <cac:TaxTotal> cu currencyID='RON' calculat la cursul BNR.
 
-## `BR-RO-040` — Codul datei de exigibilitate a TVA (UNTDID 2005)
+## `BR-RO-040` — Codul datei de exigibilitate a TVA (UNTDID 2005 / 2475)
 
 - **Categorie:** `core`
 - **Severitate:** `FATAL`
 - **Termeni EN 16931:** `BT-8`
-- **Descriere normativă:** Dacă este prezent, codul datei de exigibilitate a TVA (BT-8) trebuie să fie 3 (Data emiterii), 35 (Data livrării efective) sau 432 (Data încasării).
-- **Recomandare de remediere:** Limitați valoarea cac:InvoicePeriod/cbc:DescriptionCode la '3', '35' sau '432'.
-
-## `BR-RO-050` — Codul instrumentului de plată este obligatoriu
-
-- **Categorie:** `core`
-- **Severitate:** `FATAL`
-- **Termeni EN 16931:** `BG-16, BT-81`
-- **Descriere normativă:** Codul tipului instrumentului de plată (BT-81) este obligatoriu în specificația CIUS-RO 1.0.1.
-- **Recomandare de remediere:** Completați <cac:PaymentMeans><cbc:PaymentMeansCode> cu un cod UNCL4461 (ex. 30, 42, 48, 58, 10).
+- **Descriere normativă:** Dacă este prezent, codul datei de exigibilitate a TVA (BT-8) trebuie să fie 3 (Data emiterii), 35 (Data livrării efective) sau 432 (Data încasării) în UBL (respectiv 5, 29 sau 72 în CII DueDateTypeCode).
+- **Recomandare de remediere:** Limitați valoarea cac:InvoicePeriod/cbc:DescriptionCode la '3', '35' sau '432' (sau CII ram:DueDateTypeCode la '5', '29' sau '72').
 
 ## `BR-RO-065` — Identificator fiscal sau de TVA al Vânzătorului obligatoriu
 

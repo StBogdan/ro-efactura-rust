@@ -13,6 +13,9 @@ keywords = ["efactura", "cius-ro", "anaf", "en16931", "ubl"]
 categories = ["parser-implementations", "encoding", "finance", "localization"]
 exclude = ["tests/fixtures/**"]
 
+[lints]
+workspace = true
+
 [package.metadata.docs.rs]
 all-features = true
 
