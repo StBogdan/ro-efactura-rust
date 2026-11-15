@@ -37,28 +37,19 @@ impl RuleDescriptor {
     /// Returns the localized title for `locale`.
     #[must_use]
     pub const fn title(&self, locale: Locale) -> &'static str {
-        match locale {
-            Locale::En => self.title_en,
-            Locale::Ro => self.title_ro,
-        }
+        locale.select(self.title_en, self.title_ro)
     }
 
     /// Returns the localized description for `locale`.
     #[must_use]
     pub const fn description(&self, locale: Locale) -> &'static str {
-        match locale {
-            Locale::En => self.description_en,
-            Locale::Ro => self.description_ro,
-        }
+        locale.select(self.description_en, self.description_ro)
     }
 
     /// Returns the localized remediation hint for `locale`.
     #[must_use]
     pub const fn remediation(&self, locale: Locale) -> &'static str {
-        match locale {
-            Locale::En => self.remediation_en,
-            Locale::Ro => self.remediation_ro,
-        }
+        locale.select(self.remediation_en, self.remediation_ro)
     }
 
     /// Projects this descriptor into a single-locale [`RuleView`] suitable for JSON/WASM output.
@@ -80,6 +71,7 @@ impl RuleDescriptor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 #[non_exhaustive]
 pub struct RuleView<'a> {
     /// Canonical rule code (e.g. `"BR-RO-100"`).

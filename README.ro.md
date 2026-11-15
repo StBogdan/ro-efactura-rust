@@ -120,7 +120,10 @@ import init, { validateInvoice, validateIdentifier } from "./pkg/cius_ro_wasm.js
 
 await init();
 
-const raport = validateInvoice(fisierUint8Array, "ro", true, false);
+const raport = validateInvoice(fisierUint8Array, {
+  locale: "ro",
+  denyWarnings: true,
+});
 console.log(raport.isValid, raport.violations);
 
 const verificare = validateIdentifier("RO45678918", "ro");

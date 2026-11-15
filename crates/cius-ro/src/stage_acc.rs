@@ -1,5 +1,5 @@
-//! Shared violation accumulator (`StageAcc`) used across all validation stages (`xsd`, `semantic`,
-//! `br_ro`, and `pdfa3`) without heap-boxed closures (`Box<dyn FnOnce>`).
+//! Shared violation accumulator (`StageAcc`) used across validation stages (`xsd`, `semantic`,
+//! `br_ro`, and `pdfa3`).
 
 use crate::types::{EngineId, EngineReport, EngineStatus, Locale, Severity, Violation};
 
@@ -115,61 +115,13 @@ impl<'a> StageFinding<'a> {
 /// Selects `en` or `ro` according to `locale`.
 #[inline]
 pub(crate) const fn tr<'a>(locale: Locale, en: &'a str, ro: &'a str) -> &'a str {
-    match locale {
-        Locale::En => en,
-        Locale::Ro => ro,
-    }
+    locale.select(en, ro)
 }
 
-/// Trait implemented by [`Locale`] and [`StageAcc`] to support [`tr_fmt!`].
-pub(crate) trait HasLocale {
-    fn locale_val(&self) -> Locale;
-}
-
-impl HasLocale for Locale {
-    #[inline]
-    fn locale_val(&self) -> Locale {
-        *self
-    }
-}
-
-impl HasLocale for StageAcc {
-    #[inline]
-    fn locale_val(&self) -> Locale {
-        self.locale
-    }
-}
-
-impl<T: HasLocale + ?Sized> HasLocale for &T {
-    #[inline]
-    fn locale_val(&self) -> Locale {
-        (**self).locale_val()
-    }
-}
-
-impl<T: HasLocale + ?Sized> HasLocale for &mut T {
-    #[inline]
-    fn locale_val(&self) -> Locale {
-        (**self).locale_val()
-    }
-}
-
-/// Formats a localized `String` in [`Locale::En`] or [`Locale::Ro`] without verbose `match` blocks.
-macro_rules! tr_fmt {
-    ($loc:expr, $en:literal, $ro:literal $(, $($arg:tt)*)?) => {
-        match $crate::stage_acc::HasLocale::locale_val(&$loc) {
-            $crate::types::Locale::En => format!($en $(, $($arg)*)?),
-            $crate::types::Locale::Ro => format!($ro $(, $($arg)*)?),
-        }
-    };
-}
-pub(crate) use tr_fmt;
+pub(crate) use cius_ro_id::tr_fmt;
 
 /// Shared per-stage rule counter and [`Violation`] collector across `xsd`, `semantic`, `br_ro`,
 /// and `pdfa3`.
-///
-/// Exposes [`StageAcc::locale`] and [`StageAcc::tr`] directly so cold failure paths format
-/// localized diagnostics inline without `Box<dyn FnOnce>` allocations.
 pub(crate) struct StageAcc {
     engine: EngineId,
     name: &'static str,
@@ -207,13 +159,15 @@ impl StageAcc {
         self.locale
     }
 
+    #[inline]
+    pub(crate) const fn __as_locale(&self) -> Locale {
+        self.locale
+    }
+
     /// Selects `en` or `ro` according to [`StageAcc::locale`].
     #[inline]
     pub(crate) const fn tr<'a>(&self, en: &'a str, ro: &'a str) -> &'a str {
-        match self.locale {
-            Locale::En => en,
-            Locale::Ro => ro,
-        }
+        self.locale.select(en, ro)
     }
 
     /// Updates the reported specification/schema version label when resolved mid-stage.

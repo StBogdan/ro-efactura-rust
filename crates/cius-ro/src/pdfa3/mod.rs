@@ -21,7 +21,7 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 pub use self::extract::extract_xml_from_pdf;
 use self::loader::{PdfLoadError, load_bounded_document};
 use crate::stage_acc::{StageAcc, StageFinding, tr_fmt};
-use crate::types::{EngineId, EngineReport, Locale, LocalizedFmt, Violation, impl_localized_error};
+use crate::types::{EngineId, EngineReport, Locale, LocalizedFmt, Violation};
 
 pub(crate) const ENGINE_ID: EngineId = EngineId::Pdfa3Iso19005;
 pub(crate) const ENGINE_NAME: &str = "ISO 19005-3 (PDF/A-3) & efactura.xml Inspector";
@@ -71,7 +71,7 @@ impl LocalizedFmt for PdfExtractError {
     }
 }
 
-impl_localized_error!(PdfExtractError);
+cius_ro_id::impl_localized_error!(PdfExtractError);
 
 /// Extracted XML invoice payload from a hybrid PDF/A-3 container.
 #[derive(Debug, Clone, PartialEq, Eq)]

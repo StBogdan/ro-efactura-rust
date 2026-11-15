@@ -119,65 +119,92 @@ impl_str_serde!(
     "a valid ISO 3166-2:RO county code (e.g. 'RO-B' or 'RO-CJ')"
 );
 
-const COUNTY_TABLE: [(County, &str, &str, &str, &str); 42] = [
-    (County::B, "RO-B", "B", "București", "Bucuresti"),
-    (County::AB, "RO-AB", "AB", "Alba", "Alba"),
-    (County::AR, "RO-AR", "AR", "Arad", "Arad"),
-    (County::AG, "RO-AG", "AG", "Argeș", "Arges"),
-    (County::BC, "RO-BC", "BC", "Bacău", "Bacau"),
-    (County::BH, "RO-BH", "BH", "Bihor", "Bihor"),
-    (
-        County::BN,
-        "RO-BN",
-        "BN",
-        "Bistrița-Năsăud",
-        "Bistrita-Nasaud",
-    ),
-    (County::BT, "RO-BT", "BT", "Botoșani", "Botosani"),
-    (County::BV, "RO-BV", "BV", "Brașov", "Brasov"),
-    (County::BR, "RO-BR", "BR", "Brăila", "Braila"),
-    (County::BZ, "RO-BZ", "BZ", "Buzău", "Buzau"),
-    (County::CS, "RO-CS", "CS", "Caraș-Severin", "Caras-Severin"),
-    (County::CL, "RO-CL", "CL", "Călărași", "Calarasi"),
-    (County::CJ, "RO-CJ", "CJ", "Cluj", "Cluj"),
-    (County::CT, "RO-CT", "CT", "Constanța", "Constanta"),
-    (County::CV, "RO-CV", "CV", "Covasna", "Covasna"),
-    (County::DB, "RO-DB", "DB", "Dâmbovița", "Dambovita"),
-    (County::DJ, "RO-DJ", "DJ", "Dolj", "Dolj"),
-    (County::GL, "RO-GL", "GL", "Galați", "Galati"),
-    (County::GR, "RO-GR", "GR", "Giurgiu", "Giurgiu"),
-    (County::GJ, "RO-GJ", "GJ", "Gorj", "Gorj"),
-    (County::HR, "RO-HR", "HR", "Harghita", "Harghita"),
-    (County::HD, "RO-HD", "HD", "Hunedoara", "Hunedoara"),
-    (County::IL, "RO-IL", "IL", "Ialomița", "Ialomita"),
-    (County::IS, "RO-IS", "IS", "Iași", "Iasi"),
-    (County::IF, "RO-IF", "IF", "Ilfov", "Ilfov"),
-    (County::MM, "RO-MM", "MM", "Maramureș", "Maramures"),
-    (County::MH, "RO-MH", "MH", "Mehedinți", "Mehedinti"),
-    (County::MS, "RO-MS", "MS", "Mureș", "Mures"),
-    (County::NT, "RO-NT", "NT", "Neamț", "Neamt"),
-    (County::OT, "RO-OT", "OT", "Olt", "Olt"),
-    (County::PH, "RO-PH", "PH", "Prahova", "Prahova"),
-    (County::SM, "RO-SM", "SM", "Satu Mare", "Satu Mare"),
-    (County::SJ, "RO-SJ", "SJ", "Sălaj", "Salaj"),
-    (County::SB, "RO-SB", "SB", "Sibiu", "Sibiu"),
-    (County::SV, "RO-SV", "SV", "Suceava", "Suceava"),
-    (County::TR, "RO-TR", "TR", "Teleorman", "Teleorman"),
-    (County::TM, "RO-TM", "TM", "Timiș", "Timis"),
-    (County::TL, "RO-TL", "TL", "Tulcea", "Tulcea"),
-    (County::VS, "RO-VS", "VS", "Vaslui", "Vaslui"),
-    (County::VL, "RO-VL", "VL", "Vâlcea", "Valcea"),
-    (County::VN, "RO-VN", "VN", "Vrancea", "Vrancea"),
+#[derive(Clone, Copy)]
+struct CountyMeta {
+    county: County,
+    iso: &'static str,
+    short: &'static str,
+    name_ro: &'static str,
+    name_ascii: &'static str,
+}
+
+macro_rules! county_meta {
+    ($variant:ident, $iso:literal, $short:literal, $ro:literal, $ascii:literal) => {
+        CountyMeta {
+            county: County::$variant,
+            iso: $iso,
+            short: $short,
+            name_ro: $ro,
+            name_ascii: $ascii,
+        }
+    };
+}
+
+const COUNTY_TABLE: [CountyMeta; 42] = [
+    county_meta!(B, "RO-B", "B", "București", "Bucuresti"),
+    county_meta!(AB, "RO-AB", "AB", "Alba", "Alba"),
+    county_meta!(AR, "RO-AR", "AR", "Arad", "Arad"),
+    county_meta!(AG, "RO-AG", "AG", "Argeș", "Arges"),
+    county_meta!(BC, "RO-BC", "BC", "Bacău", "Bacau"),
+    county_meta!(BH, "RO-BH", "BH", "Bihor", "Bihor"),
+    county_meta!(BN, "RO-BN", "BN", "Bistrița-Năsăud", "Bistrita-Nasaud"),
+    county_meta!(BT, "RO-BT", "BT", "Botoșani", "Botosani"),
+    county_meta!(BV, "RO-BV", "BV", "Brașov", "Brasov"),
+    county_meta!(BR, "RO-BR", "BR", "Brăila", "Braila"),
+    county_meta!(BZ, "RO-BZ", "BZ", "Buzău", "Buzau"),
+    county_meta!(CS, "RO-CS", "CS", "Caraș-Severin", "Caras-Severin"),
+    county_meta!(CL, "RO-CL", "CL", "Călărași", "Calarasi"),
+    county_meta!(CJ, "RO-CJ", "CJ", "Cluj", "Cluj"),
+    county_meta!(CT, "RO-CT", "CT", "Constanța", "Constanta"),
+    county_meta!(CV, "RO-CV", "CV", "Covasna", "Covasna"),
+    county_meta!(DB, "RO-DB", "DB", "Dâmbovița", "Dambovita"),
+    county_meta!(DJ, "RO-DJ", "DJ", "Dolj", "Dolj"),
+    county_meta!(GL, "RO-GL", "GL", "Galați", "Galati"),
+    county_meta!(GR, "RO-GR", "GR", "Giurgiu", "Giurgiu"),
+    county_meta!(GJ, "RO-GJ", "GJ", "Gorj", "Gorj"),
+    county_meta!(HR, "RO-HR", "HR", "Harghita", "Harghita"),
+    county_meta!(HD, "RO-HD", "HD", "Hunedoara", "Hunedoara"),
+    county_meta!(IL, "RO-IL", "IL", "Ialomița", "Ialomita"),
+    county_meta!(IS, "RO-IS", "IS", "Iași", "Iasi"),
+    county_meta!(IF, "RO-IF", "IF", "Ilfov", "Ilfov"),
+    county_meta!(MM, "RO-MM", "MM", "Maramureș", "Maramures"),
+    county_meta!(MH, "RO-MH", "MH", "Mehedinți", "Mehedinti"),
+    county_meta!(MS, "RO-MS", "MS", "Mureș", "Mures"),
+    county_meta!(NT, "RO-NT", "NT", "Neamț", "Neamt"),
+    county_meta!(OT, "RO-OT", "OT", "Olt", "Olt"),
+    county_meta!(PH, "RO-PH", "PH", "Prahova", "Prahova"),
+    county_meta!(SM, "RO-SM", "SM", "Satu Mare", "Satu Mare"),
+    county_meta!(SJ, "RO-SJ", "SJ", "Sălaj", "Salaj"),
+    county_meta!(SB, "RO-SB", "SB", "Sibiu", "Sibiu"),
+    county_meta!(SV, "RO-SV", "SV", "Suceava", "Suceava"),
+    county_meta!(TR, "RO-TR", "TR", "Teleorman", "Teleorman"),
+    county_meta!(TM, "RO-TM", "TM", "Timiș", "Timis"),
+    county_meta!(TL, "RO-TL", "TL", "Tulcea", "Tulcea"),
+    county_meta!(VS, "RO-VS", "VS", "Vaslui", "Vaslui"),
+    county_meta!(VL, "RO-VL", "VL", "Vâlcea", "Valcea"),
+    county_meta!(VN, "RO-VN", "VN", "Vrancea", "Vrancea"),
 ];
+
+const fn const_str_eq(a: &str, b: &str) -> bool {
+    let (ab, bb) = (a.as_bytes(), b.as_bytes());
+    if ab.len() != bb.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < ab.len() {
+        if ab[i] != bb[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
 
 const _: () = {
     let mut i = 0;
     while i < COUNTY_TABLE.len() {
-        assert!(COUNTY_TABLE[i].0 as usize == i);
-        assert!(
-            ISO_3166_2_RO_CODES[i].len() == COUNTY_TABLE[i].1.len()
-                && ISO_3166_2_RO_CODES[i].as_bytes()[3] == COUNTY_TABLE[i].1.as_bytes()[3]
-        );
+        assert!(COUNTY_TABLE[i].county as usize == i);
+        assert!(const_str_eq(ISO_3166_2_RO_CODES[i], COUNTY_TABLE[i].iso));
         i += 1;
     }
     assert!(BUCHAREST_SECTOR_CODES.len() == 6);
@@ -192,27 +219,24 @@ const _: () = {
 impl County {
     /// Returns all 42 [`County`] variants in `ISO 3166-2:RO` order.
     pub fn all() -> impl Iterator<Item = Self> {
-        COUNTY_TABLE.iter().map(|(c, _, _, _, _)| *c)
+        COUNTY_TABLE.iter().map(|meta| meta.county)
     }
 
     /// Strict ANAF `ISO 3166-2:RO` lookup (exact uppercase match after trimming, e.g. `"RO-CJ"`, `"RO-B"`).
     #[must_use]
     pub fn from_code(code: &str) -> Option<Self> {
-        if code.len() > crate::MAX_ID_SCAN_CHARS {
-            return None;
-        }
         let trimmed = code.trim();
         COUNTY_TABLE
             .iter()
-            .find(|(_, iso, _, _, _)| *iso == trimmed)
-            .map(|(c, _, _, _, _)| *c)
+            .find(|meta| meta.iso == trimmed)
+            .map(|meta| meta.county)
     }
 
     /// Fuzzy county resolution from free-text inputs (`"CLUJ"`, `"Jud. Cluj"`, `"CJ"`, `"ro-cj"`, `"București"`),
     /// useful for generating remediation hints when `BR-RO-110` fails.
     #[must_use]
     pub fn lookup_fuzzy(input: &str) -> Option<Self> {
-        let folded = fold_ascii_upper(input);
+        let folded = fold_ascii_upper(input)?;
         let stripped = ["JUDETUL", "JUD.", "JUD", "MUNICIPIUL", "MUN."]
             .iter()
             .find_map(|p| folded.strip_prefix(p))
@@ -228,40 +252,39 @@ impl County {
             .chars()
             .filter(char::is_ascii_alphanumeric)
             .collect();
-        COUNTY_TABLE
-            .iter()
-            .find_map(|&(county, iso, short, _, ascii_name)| {
-                let norm_name = ascii_name
-                    .chars()
-                    .filter(char::is_ascii_alphanumeric)
-                    .map(|c| c.to_ascii_uppercase());
-                (stripped == iso || stripped == short || compact.chars().eq(norm_name))
-                    .then_some(county)
-            })
+        COUNTY_TABLE.iter().find_map(|meta| {
+            let norm_name = meta
+                .name_ascii
+                .chars()
+                .filter(char::is_ascii_alphanumeric)
+                .map(|c| c.to_ascii_uppercase());
+            (stripped == meta.iso || stripped == meta.short || compact.chars().eq(norm_name))
+                .then_some(meta.county)
+        })
     }
 
     /// Returns the normative `ISO 3166-2:RO` code (e.g. `"RO-CJ"`, `"RO-B"`).
     #[must_use]
     pub const fn code(self) -> &'static str {
-        COUNTY_TABLE[self as usize].1
+        COUNTY_TABLE[self as usize].iso
     }
 
     /// Returns the 1-or-2 letter county abbreviation without `RO-` (e.g. `"CJ"`, `"B"`).
     #[must_use]
     pub const fn short_code(self) -> &'static str {
-        COUNTY_TABLE[self as usize].2
+        COUNTY_TABLE[self as usize].short
     }
 
     /// Returns the Romanian county name with proper diacritics (e.g. `"Brașov"`, `"București"`).
     #[must_use]
     pub const fn name_ro(self) -> &'static str {
-        COUNTY_TABLE[self as usize].3
+        COUNTY_TABLE[self as usize].name_ro
     }
 
     /// Returns the ASCII-transliterated county name (e.g. `"Brasov"`, `"Bucuresti"`).
     #[must_use]
     pub const fn name_ascii(self) -> &'static str {
-        COUNTY_TABLE[self as usize].4
+        COUNTY_TABLE[self as usize].name_ascii
     }
 }
 
@@ -308,26 +331,36 @@ impl BucharestSector {
     /// Strict ANAF lookup (`"SECTOR1"`..`"SECTOR6"`).
     #[must_use]
     pub fn from_code(code: &str) -> Option<Self> {
-        if code.len() > crate::MAX_ID_SCAN_CHARS {
-            return None;
+        match code.trim() {
+            "SECTOR1" => Some(Self::Sector1),
+            "SECTOR2" => Some(Self::Sector2),
+            "SECTOR3" => Some(Self::Sector3),
+            "SECTOR4" => Some(Self::Sector4),
+            "SECTOR5" => Some(Self::Sector5),
+            "SECTOR6" => Some(Self::Sector6),
+            _ => None,
         }
-        let rest = code.trim().strip_prefix("SECTOR")?;
-        (rest.len() == 1).then(|| Self::from_number(rest.as_bytes()[0].wrapping_sub(b'0')))?
     }
 
     /// Fuzzy normalization from common human-written variants (`"Sector 1"`, `"Sectorul 1"`,
     /// `"București, Sector 3"`, `"Sect. 2"`, `"S6"`) into the canonical ANAF `SECTOR1`..`SECTOR6` token.
     #[must_use]
     pub fn normalize_fuzzy(input: &str) -> Option<Self> {
-        let compact: String = fold_ascii_upper(input)
-            .chars()
-            .filter(char::is_ascii_alphanumeric)
-            .collect();
+        let folded = fold_ascii_upper(input)?;
+        let compact: String = folded.chars().filter(char::is_ascii_alphanumeric).collect();
         let s = compact.strip_prefix("BUCURESTI").unwrap_or(&compact);
         let tail = ["SECTORUL", "SECTOR", "SECT", "S"]
             .iter()
             .find_map(|p| s.strip_prefix(p))?;
-        (tail.len() == 1).then(|| Self::from_number(tail.as_bytes()[0].wrapping_sub(b'0')))?
+        match tail {
+            "1" => Some(Self::Sector1),
+            "2" => Some(Self::Sector2),
+            "3" => Some(Self::Sector3),
+            "4" => Some(Self::Sector4),
+            "5" => Some(Self::Sector5),
+            "6" => Some(Self::Sector6),
+            _ => None,
+        }
     }
 
     /// Constructs a [`BucharestSector`] from sector number `1..=6`.
@@ -372,18 +405,21 @@ impl FromStr for BucharestSector {
     }
 }
 
+const MAX_FUZZY_SUBDIVISION_BYTES: usize = 128;
+
 fn bounded_err_token(s: &str) -> String {
-    let cap = crate::clamp_char_boundary(s, crate::MAX_ID_SCAN_CHARS);
-    s[..cap].trim().to_string()
+    let trimmed = s.trim();
+    let end = trimmed
+        .char_indices()
+        .nth(64)
+        .map_or(trimmed.len(), |(idx, _)| idx);
+    trimmed[..end].to_string()
 }
 
-fn fold_ascii_upper(s: &str) -> String {
-    if s.len() > crate::MAX_ID_SCAN_CHARS {
-        return String::new();
-    }
+fn fold_ascii_upper(s: &str) -> Option<String> {
     let trimmed = s.trim();
-    if trimmed.len() > 256 {
-        return String::new();
+    if trimmed.is_empty() || trimmed.len() > MAX_FUZZY_SUBDIVISION_BYTES {
+        return None;
     }
-    deunicode::deunicode(trimmed).to_ascii_uppercase()
+    Some(deunicode::deunicode(trimmed).to_ascii_uppercase())
 }

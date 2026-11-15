@@ -26,6 +26,7 @@ pdfa3 = ["dep:lopdf", "dep:ttf-parser"]
 wasm-js = ["lopdf?/wasm_js"]
 serde = ["dep:serde", "cius-ro-id/serde", "en16931/serde", "en16931-formats/serde"]
 svrl = ["en16931/svrl"]
+tsify = ["serde", "cius-ro-id/tsify", "dep:tsify", "dep:wasm-bindgen"]
 
 [dependencies]
 cius-ro-id = { workspace = true, features = ["std"] }
@@ -35,6 +36,8 @@ roxmltree.workspace = true
 
 ttf-parser = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+tsify = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 lopdf = { workspace = true, optional = true }

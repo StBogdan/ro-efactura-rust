@@ -21,7 +21,7 @@ pub const CNP_WEIGHTS: [u32; 12] = [2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9];
 /// Returns `true` if `raw` (ignoring surrounding whitespace) equals [`ANAF_B2C_PLACEHOLDER`] (`"0000000000000"`).
 #[must_use]
 pub fn is_anaf_b2c_placeholder(raw: &str) -> bool {
-    raw.len() <= crate::MAX_ID_SCAN_CHARS && raw.trim() == ANAF_B2C_PLACEHOLDER
+    raw.trim() == ANAF_B2C_PLACEHOLDER
 }
 
 /// Sex and birth-century classification encoded by the first digit (`S`) of a Romanian [`Cnp`].
@@ -206,9 +206,8 @@ impl Cnp {
     /// Returns [`CnpError`] if the input is the B2C placeholder, contains non-digits, is not 13 digits long,
     /// or fails sex-digit, calendar-date, county-code, sequence, or modulo-11 verification.
     pub fn parse(raw: &str) -> Result<Self, CnpError> {
-        let cap = crate::clamp_char_boundary(raw, crate::MAX_ID_SCAN_CHARS);
-        let trimmed = raw[..cap].trim();
-        if raw.len() <= crate::MAX_ID_SCAN_CHARS && trimmed == ANAF_B2C_PLACEHOLDER {
+        let trimmed = raw.trim();
+        if trimmed == ANAF_B2C_PLACEHOLDER {
             return Err(CnpError::AnafB2cPlaceholder);
         }
         let mut digits = [0u8; 13];
@@ -224,14 +223,6 @@ impl Cnp {
             }
             digits[len] = ch as u8;
             len += 1;
-        }
-        if raw.len() > crate::MAX_ID_SCAN_CHARS {
-            let reported = if len == digits.len() {
-                digits.len() + 1
-            } else {
-                len
-            };
-            return Err(CnpError::InvalidLength { len: reported });
         }
         if len != digits.len() {
             return Err(CnpError::InvalidLength { len });

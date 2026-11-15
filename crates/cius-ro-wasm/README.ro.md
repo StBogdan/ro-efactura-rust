@@ -14,12 +14,14 @@ wasm-pack build crates/cius-ro-wasm --target web --release
 
 ## API JavaScript / TypeScript
 
-Fișierele generate `pkg/cius_ro_wasm.d.ts` includ definiții TypeScript complete (`ValidationReport`, `Violation`, `EngineReport`, `IdentifierInspection`, `RuleView`, `Locale`, `Severity` etc.).
+Fișierele generate `pkg/cius_ro_wasm.d.ts` includ definiții TypeScript complete generate prin `tsify` (`ValidateOptions`, `ValidationReport`, `Violation`, `EngineReport`, `IdentifierInspection`, `RuleView`, `Locale`, `Severity` etc.).
 
-- `validateInvoice(bytes: Uint8Array, locale?: "en" | "ro", denyWarnings?: boolean, includeSvrl?: boolean): ValidationReport`
+- `validateInvoice(bytes: Uint8Array, options?: ValidateOptions | null): ValidationReport`
 - `extractPdfXml(bytes: Uint8Array): Uint8Array`
-- `validateIdentifier(input: string, locale?: "en" | "ro"): IdentifierInspection`
-- `listRules(locale?: "en" | "ro"): RuleView[]`
+- `validateIdentifier(input: string, locale?: Locale | null): IdentifierInspection`
+- `listRules(locale?: Locale | null): RuleView[]`
+
+Toate câmpurile din [`ValidateOptions`](https://docs.rs/cius-ro/latest/cius_ro/struct.ValidateOptions.html) (`locale`, `runPdfa`, `runXsd`, `runEn16931`, `runCiusRoRules`, `runChecksums`, `strictCiusRoCustomization`, `denyWarnings`, `includeSvrl`) sunt opționale și folosesc valorile implicite atunci când sunt omise.
 
 > **Notă:** Pe `wasm32-unknown-unknown`, validarea sintaxei XML, protecția XXE (`<!DOCTYPE` / `<!ENTITY`), modelul CEN EN 16931, toate cele 122 de reguli ANAF `BR-RO-*`, verificările `cius-ro-id` și verificarea containerului `PDF/A-3` rulează direct în memorie; validarea XSD multi-fișier pe disc este marcată `"SKIPPED"`.
 
@@ -33,7 +35,11 @@ import init, {
 
 await init();
 
-const raport = validateInvoice(octetiFacturaUint8Array, "ro", true, false);
+const raport = validateInvoice(octetiFacturaUint8Array, {
+  locale: "ro",
+  denyWarnings: true,
+  includeSvrl: false,
+});
 if (!raport.isValid) {
   console.error(raport.violations);
 }

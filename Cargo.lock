@@ -214,8 +214,10 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tsify",
  "ttf-parser",
  "uppsala",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -239,6 +241,8 @@ dependencies = [
  "serde",
  "serde_json",
  "time",
+ "tsify",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -247,9 +251,8 @@ version = "0.1.0"
 dependencies = [
  "cius-ro",
  "cius-ro-id",
- "serde",
- "serde-wasm-bindgen",
  "serde_json",
+ "tsify",
  "wasm-bindgen",
 ]
 
@@ -987,6 +990,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_derive_internals"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "serde_json"
 version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1152,6 +1166,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
 dependencies = [
  "winnow",
+]
+
+[[package]]
+name = "tsify"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea3af6b48c5c5624f7eb3c2f578d1335fadac433321980cae0063e8eb0acaa44"
+dependencies = [
+ "serde",
+ "serde-wasm-bindgen",
+ "tsify-macros",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "tsify-macros"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1e2e93369379d0a527c7d6632b58c55d52db7a106d8afbde3b354f3a57a9f1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.119",
 ]
 
 [[package]]

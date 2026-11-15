@@ -114,16 +114,9 @@ impl Cui {
     /// Returns [`CuiError`] if the input is empty, contains invalid characters, falls outside `2..=10` digits,
     /// starts with `'0'`, or fails the official modulo-11 control-digit check.
     pub fn parse(raw: &str) -> Result<Self, CuiError> {
-        let mut chars = raw
-            .chars()
-            .take(crate::MAX_ID_SCAN_CHARS)
-            .filter(|c| !c.is_whitespace());
+        let mut chars = raw.trim().chars().filter(|c| !c.is_whitespace());
         let Some(c0) = chars.next() else {
-            return if raw.len() > crate::MAX_ID_SCAN_CHARS {
-                Err(CuiError::InvalidLength { len: 0 })
-            } else {
-                Err(CuiError::Empty)
-            };
+            return Err(CuiError::Empty);
         };
         let c1 = chars.next();
 
@@ -147,10 +140,6 @@ impl Cui {
             count += 1;
         }
 
-        if raw.len() > crate::MAX_ID_SCAN_CHARS {
-            let reported = if count >= 2 { digits.len() + 1 } else { count };
-            return Err(CuiError::InvalidLength { len: reported });
-        }
         Self::from_validated_digits(digits, count, has_ro_prefix)
     }
 
@@ -281,61 +270,56 @@ fn compute_cui_check_digit_unchecked(body_digits: &[u8]) -> u8 {
 /// `RO` IBAN, or `J40/1234/2022` `ONRC` Trade Register number).
 #[must_use]
 pub fn parse_cui_candidate(raw: &str) -> Option<Result<Cui, CuiError>> {
-    let mut buf = [0u8; 25];
-    let mut len = 0usize;
-    let mut has_ro = false;
-    for ch in raw
-        .chars()
-        .take(crate::MAX_ID_SCAN_CHARS)
-        .filter(|c| !c.is_whitespace())
-    {
-        if !ch.is_ascii() {
+    let trimmed = raw.trim();
+    let mut chars = trimmed.chars().filter(|c| !c.is_whitespace());
+    let c0 = chars.next()?;
+    let c1 = chars.next()?;
+
+    if matches!((c0, c1), ('R' | 'r', 'O' | 'o')) {
+        if crate::iban::looks_like_ro_iban_candidate(trimmed) {
             return None;
         }
-        let b = ch as u8;
-        if len == 2 {
-            has_ro = buf[0].eq_ignore_ascii_case(&b'R') && buf[1].eq_ignore_ascii_case(&b'O');
-            if has_ro && b == b'-' {
+        let mut digits = [0u8; 10];
+        let mut count = 0usize;
+        let mut invalid_chars = false;
+        for ch in chars {
+            if !ch.is_ascii() || (count == 0 && ch == '-') {
                 return None;
             }
+            if ch.is_ascii_digit() {
+                if count < digits.len() {
+                    digits[count] = ch as u8;
+                }
+            } else {
+                invalid_chars = true;
+            }
+            count += 1;
+            if count > digits.len() && !invalid_chars {
+                return Some(Err(CuiError::InvalidLength { len: count }));
+            }
+            if count > 24 {
+                break;
+            }
         }
-        if len >= 2 && !has_ro && (!b.is_ascii_digit() || len == 10) {
-            return None;
-        }
-        if len == buf.len() {
-            break;
-        }
-        buf[len] = b;
-        len += 1;
-    }
-    let is_ro =
-        len >= 2 && buf[0].eq_ignore_ascii_case(&b'R') && buf[1].eq_ignore_ascii_case(&b'O');
-    if len < 2 || (raw.len() > crate::MAX_ID_SCAN_CHARS && !is_ro) {
-        return None;
-    }
-
-    if is_ro {
-        if len == 24 && !buf[2..24].iter().all(u8::is_ascii_digit) {
-            return None;
-        }
-        let digit_slice = &buf[2..len];
-        if !digit_slice.iter().all(u8::is_ascii_digit) {
+        if invalid_chars {
             return Some(Err(CuiError::InvalidCharacters));
         }
-        if raw.len() > crate::MAX_ID_SCAN_CHARS || digit_slice.len() > 10 {
-            return Some(Err(CuiError::InvalidLength {
-                len: digit_slice.len(),
-            }));
-        }
-        let mut digits = [0u8; 10];
-        digits[..digit_slice.len()].copy_from_slice(digit_slice);
-        return Some(Cui::from_validated_digits(digits, digit_slice.len(), true));
+        return Some(Cui::from_validated_digits(digits, count, true));
     }
 
-    if (2..=10).contains(&len) && buf[..len].iter().all(u8::is_ascii_digit) {
-        let mut digits = [0u8; 10];
-        digits[..len].copy_from_slice(&buf[..len]);
-        return Some(Cui::from_validated_digits(digits, len, false));
+    if !c0.is_ascii_digit() || !c1.is_ascii_digit() {
+        return None;
     }
-    None
+    let mut digits = [0u8; 10];
+    digits[0] = c0 as u8;
+    digits[1] = c1 as u8;
+    let mut count = 2usize;
+    for ch in chars {
+        if !ch.is_ascii_digit() || count == digits.len() {
+            return None;
+        }
+        digits[count] = ch as u8;
+        count += 1;
+    }
+    Some(Cui::from_validated_digits(digits, count, false))
 }

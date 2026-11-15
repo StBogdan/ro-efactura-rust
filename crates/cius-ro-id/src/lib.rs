@@ -10,7 +10,8 @@
 //!   calendar date, county `01..=48 | 51 | 52 | 70`, modulo-11 check digit) plus ANAF's statutory
 //!   `0000000000000` B2C placeholder (*OUG 69/2024*).
 //! - [`Onrc`]: Trade Register (*Registrul Comerțului*) numbers in classic `J40/1234/2022` and
-//!   Law 265/2022 `J2024001234005` (`[JFC]\d{13}`) formats.
+//!   Law 265/2022 `J2024001234005` (`[JFC]\d{13}`) structural formats (Law 265/2022's trailing
+//!   control digit has no published checksum formula and is parsed structurally as `0..=9`).
 //! - [`RoIban`]: 24-character Romanian IBAN (`RO` + 2 check digits + 4-letter bank code + 16-char
 //!   account) verified via `ISO/IEC 7064 MOD 97-10`.
 //! - [`County`] & [`BucharestSector`]: All 42 `ISO 3166-2:RO` subdivisions (`RO-B`, `RO-AB`..`RO-VN`)
@@ -46,19 +47,7 @@
 
 extern crate alloc;
 
-/// Upper bound on raw characters/bytes inspected by any identifier parser or fuzzy helper (`O(1)` `DoS` cap).
-pub(crate) const MAX_ID_SCAN_CHARS: usize = 512;
-
-pub(crate) const fn clamp_char_boundary(s: &str, max: usize) -> usize {
-    let mut cap = if s.len() < max { s.len() } else { max };
-    while cap > 0 && !s.is_char_boundary(cap) {
-        cap -= 1;
-    }
-    cap
-}
-
-/// Fixed-capacity ASCII digit buffer upholding the UTF-8 / ASCII invariant for [`Cui`] and [`Cnp`]
-/// without `unsafe` code or silent `.unwrap_or_default()` fallbacks.
+/// Fixed-capacity ASCII buffer upholding the UTF-8 invariant for [`Cui`] and [`Cnp`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct AsciiDigits<const N: usize>([u8; N]);
 
@@ -116,7 +105,24 @@ macro_rules! impl_str_serde {
     };
 }
 
-macro_rules! impl_localized_error {
+#[doc(hidden)]
+pub type __LocalizedString = alloc::string::String;
+
+#[doc(hidden)]
+#[must_use]
+pub fn __format_localized<E: LocalizedFmt + ?Sized>(err: &E, locale: Locale) -> __LocalizedString {
+    alloc::string::ToString::to_string(&LocalizedError::new(err, locale))
+}
+
+#[doc(hidden)]
+#[must_use]
+pub fn __format_args_to_string(args: core::fmt::Arguments<'_>) -> __LocalizedString {
+    alloc::fmt::format(args)
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_localized_display {
     ($err:ty) => {
         impl $err {
             /// Returns a zero-allocation [`core::fmt::Display`] adapter formatted in `locale`.
@@ -128,20 +134,43 @@ macro_rules! impl_localized_error {
                 $crate::LocalizedError::new(self, locale)
             }
 
-            /// Returns a human-readable error message in the requested [`Locale`](crate::Locale).
+            /// Returns a human-readable diagnostic message in the requested [`Locale`]($crate::Locale).
             #[must_use]
-            pub fn message(&self, locale: $crate::Locale) -> alloc::string::String {
-                alloc::string::ToString::to_string(&self.display(locale))
+            pub fn message(&self, locale: $crate::Locale) -> $crate::__LocalizedString {
+                $crate::__format_localized(self, locale)
             }
         }
 
-        impl core::fmt::Display for $err {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        impl ::core::fmt::Display for $err {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 $crate::LocalizedFmt::fmt_locale(self, f, $crate::Locale::En)
             }
         }
+    };
+}
 
-        impl core::error::Error for $err {}
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_localized_error {
+    ($err:ty) => {
+        $crate::impl_localized_display!($err);
+
+        impl ::core::error::Error for $err {}
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! tr_fmt {
+    ($locale:expr, $en:literal, $ro:literal $(, $($arg:tt)*)?) => {
+        match ($locale).__as_locale() {
+            $crate::Locale::En => {
+                $crate::__format_args_to_string(::core::format_args!($en $(, $($arg)*)?))
+            }
+            $crate::Locale::Ro => {
+                $crate::__format_args_to_string(::core::format_args!($ro $(, $($arg)*)?))
+            }
+        }
     };
 }
 
@@ -162,7 +191,6 @@ pub use subdivision::{
     BUCHAREST_SECTOR_CODES, BucharestSector, County, ISO_3166_2_RO_CODES, SubdivisionError,
 };
 
-use alloc::format;
 use alloc::string::{String, ToString};
 use core::fmt;
 use core::str::FromStr;
@@ -171,6 +199,7 @@ use core::str::FromStr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub enum Locale {
     /// English (`en`).
     #[default]
@@ -193,6 +222,21 @@ impl Locale {
             Self::En => "en",
             Self::Ro => "ro",
         }
+    }
+
+    /// Selects `en` when `self` is [`Locale::En`] or `ro` when `self` is [`Locale::Ro`].
+    #[must_use]
+    pub const fn select<'a>(self, en: &'a str, ro: &'a str) -> &'a str {
+        match self {
+            Self::En => en,
+            Self::Ro => ro,
+        }
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn __as_locale(&self) -> Self {
+        *self
     }
 }
 
@@ -287,26 +331,11 @@ impl<E: LocalizedFmt + ?Sized> fmt::Display for LocalizedError<'_, E> {
     }
 }
 
-const fn tr(locale: Locale, en: &'static str, ro: &'static str) -> &'static str {
-    match locale {
-        Locale::En => en,
-        Locale::Ro => ro,
-    }
-}
-
-macro_rules! tr_fmt {
-    ($locale:expr, $en:literal, $ro:literal $(, $($arg:tt)*)?) => {
-        match $locale {
-            Locale::En => format!($en $(, $($arg)*)?),
-            Locale::Ro => format!($ro $(, $($arg)*)?),
-        }
-    };
-}
-
 /// Classification of a Romanian identifier inspected by [`inspect_identifier`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 #[non_exhaustive]
 pub enum IdentifierKind {
     /// Romanian `CUI` / `CIF` fiscal identifier (`2..=10` digits, optional `RO` prefix).
@@ -354,6 +383,7 @@ impl fmt::Display for IdentifierKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 #[non_exhaustive]
 pub struct IdentifierInspection {
     /// Raw input string inspected.
@@ -364,6 +394,7 @@ pub struct IdentifierInspection {
     pub is_valid: bool,
     /// Canonical normalized representation when valid (or suggested normalization when fuzzy-matched).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub normalized: Option<String>,
     /// Localized diagnostic summary in the requested [`Locale`].
     pub details: String,
@@ -373,32 +404,23 @@ pub struct IdentifierInspection {
 /// `ONRC`, `RO IBAN`, `ISO 3166-2:RO` county, or Bucharest `SECTOR1`..`SECTOR6`).
 #[must_use]
 pub fn inspect_identifier(raw: &str, locale: Locale) -> IdentifierInspection {
-    if raw.len() <= MAX_ID_SCAN_CHARS {
-        let trimmed = raw.trim();
-        if let Some(res) = try_inspect_exact_or_fuzzy_subdivision(raw, trimmed, locale) {
-            return res;
-        }
-        if let Some(res) = try_inspect_banking_or_registry(raw, trimmed, locale) {
-            return res;
-        }
-        if let Some(res) = try_inspect_fiscal_or_fuzzy_county(raw, trimmed, locale) {
-            return res;
-        }
-    } else {
-        if let Some(res) = try_inspect_banking_or_registry(raw, raw, locale) {
-            return res;
-        }
-        if let Some(Err(e)) = parse_cui_candidate(raw) {
-            return build_inspection(raw, IdentifierKind::Cui, false, None, e.message(locale));
-        }
+    let trimmed = raw.trim();
+    if let Some(res) = try_inspect_exact_or_fuzzy_subdivision(raw, trimmed, locale) {
+        return res;
+    }
+    if let Some(res) = try_inspect_banking_or_registry(raw, trimmed, locale) {
+        return res;
+    }
+    if let Some(res) = try_inspect_fiscal_or_fuzzy_county(raw, trimmed, locale) {
+        return res;
     }
 
-    let details = tr(
-        locale,
-        "Unrecognized format (not a valid Romanian CUI/CIF, CNP, ONRC, RO IBAN, or ISO 3166-2:RO code).",
-        "Format nerecunoscut ca CUI/CIF, CNP, ONRC, IBAN RO sau subdiviziune ISO 3166-2:RO.",
-    )
-    .to_string();
+    let details = locale
+        .select(
+            "Unrecognized format (not a valid Romanian CUI/CIF, CNP, ONRC, RO IBAN, or ISO 3166-2:RO code).",
+            "Format nerecunoscut ca CUI/CIF, CNP, ONRC, IBAN RO sau subdiviziune ISO 3166-2:RO.",
+        )
+        .to_string();
     IdentifierInspection {
         input: raw.to_string(),
         kind: IdentifierKind::Unknown,
@@ -486,7 +508,7 @@ fn try_inspect_banking_or_registry(
     trimmed: &str,
     locale: Locale,
 ) -> Option<IdentifierInspection> {
-    if looks_like_ro_iban_candidate(trimmed) {
+    if iban::looks_like_ro_iban_candidate(trimmed) {
         return Some(match RoIban::parse(trimmed) {
             Ok(iban) => {
                 let (bank, fmt_iban) = (iban.bank_code(), iban.formatted());
@@ -532,12 +554,12 @@ fn try_inspect_fiscal_or_fuzzy_county(
     locale: Locale,
 ) -> Option<IdentifierInspection> {
     if is_anaf_b2c_placeholder(trimmed) {
-        let details = tr(
-            locale,
-            "Valid ANAF B2C placeholder (13 zeros per OUG 69/2024 when consumer CNP is not disclosed).",
-            "Substituent B2C ANAF valid (13 zerouri cf. OUG 69/2024 pentru persoane fizice fără CNP declarat).",
-        )
-        .to_string();
+        let details = locale
+            .select(
+                "Valid ANAF B2C placeholder (13 zeros per OUG 69/2024 when consumer CNP is not disclosed).",
+                "Substituent B2C ANAF valid (13 zerouri cf. OUG 69/2024 pentru persoane fizice fără CNP declarat).",
+            )
+            .to_string();
         return Some(build_inspection(
             raw,
             IdentifierKind::AnafB2cPlaceholder,
@@ -599,31 +621,6 @@ fn try_inspect_fiscal_or_fuzzy_county(
             details,
         )
     })
-}
-
-fn looks_like_ro_iban_candidate(trimmed: &str) -> bool {
-    let mut iter = trimmed
-        .chars()
-        .take(MAX_ID_SCAN_CHARS)
-        .filter(|c| !c.is_whitespace() && *c != '-');
-    let (Some(c0), Some(c1)) = (iter.next(), iter.next()) else {
-        return false;
-    };
-    if !c0.eq_ignore_ascii_case(&'R') || !c1.eq_ignore_ascii_case(&'O') {
-        return false;
-    }
-    let mut rest_count = 0usize;
-    let mut has_alpha = false;
-    for ch in iter.take(23) {
-        rest_count += 1;
-        if ch.is_ascii_alphabetic() {
-            has_alpha = true;
-        }
-        if rest_count >= 12 && has_alpha {
-            return true;
-        }
-    }
-    false
 }
 
 #[cfg(all(doctest, feature = "std"))]

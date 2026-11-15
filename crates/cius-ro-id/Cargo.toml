@@ -22,12 +22,15 @@ all-features = true
 default = ["std"]
 std = []
 serde = ["dep:serde"]
+tsify = ["std", "serde", "dep:tsify", "dep:wasm-bindgen"]
 
 [dependencies]
 time.workspace = true
 iban_validate.workspace = true
 deunicode.workspace = true
 serde = { workspace = true, optional = true }
+tsify = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

@@ -40,51 +40,11 @@ macro_rules! impl_str_enum {
     };
 }
 
-macro_rules! impl_localized_display {
-    ($err:ty) => {
-        impl $err {
-            /// Returns a zero-allocation [`core::fmt::Display`] adapter formatted in `locale`.
-            #[must_use]
-            pub const fn display(
-                &self,
-                locale: $crate::types::Locale,
-            ) -> $crate::types::LocalizedDisplay<'_, Self> {
-                $crate::types::LocalizedDisplay::new(self, locale)
-            }
-
-            /// Formats a localized diagnostic message in `locale`.
-            #[must_use]
-            pub fn message(&self, locale: $crate::types::Locale) -> String {
-                ToString::to_string(&self.display(locale))
-            }
-        }
-
-        impl ::core::fmt::Display for $err {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                $crate::types::LocalizedFmt::fmt_locale(self, f, $crate::types::Locale::En)
-            }
-        }
-    };
-}
-
-#[cfg(feature = "pdfa3")]
-macro_rules! impl_localized_error {
-    ($err:ty) => {
-        crate::types::impl_localized_display!($err);
-
-        impl ::core::error::Error for $err {}
-    };
-}
-
-#[cfg(feature = "pdfa3")]
-pub(crate) use impl_localized_display;
-#[cfg(feature = "pdfa3")]
-pub(crate) use impl_localized_error;
-
 /// Overall processing decision recommended for a validated document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub enum Recommendation {
     /// Document satisfies all configured normative checks (`"accept"`).
     Accept,
@@ -100,6 +60,7 @@ impl_str_enum!(Recommendation, "Lowercase string label (`\"accept\"` or `\"rejec
 /// Identifier of the validation stage that produced an [`EngineReport`] or [`Violation`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 #[non_exhaustive]
 pub enum EngineId {
     /// ISO 19005-3 (`PDF/A-3`) binary structure & `efactura.xml` inspector (`"pdfa3_iso19005"`).
@@ -135,6 +96,7 @@ impl_str_enum!(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 #[non_exhaustive]
 pub enum RuleCategory {
     /// Core CIUS-RO document rules (`"core"`).
@@ -223,7 +185,7 @@ impl LocalizedFmt for XmlDecodeError {
     }
 }
 
-impl_localized_display!(XmlDecodeError);
+cius_ro_id::impl_localized_display!(XmlDecodeError);
 
 impl core::error::Error for XmlDecodeError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
@@ -238,6 +200,7 @@ impl core::error::Error for XmlDecodeError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "UPPERCASE"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub enum Severity {
     /// Normative breach that causes invoice rejection (`FATAL`).
     Fatal,
@@ -257,6 +220,7 @@ impl_str_enum!(Severity, "Uppercase string label (`\"FATAL\"`, `\"WARNING\"`, `\
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "UPPERCASE"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub enum EngineStatus {
     /// Stage ran and produced zero fatal violations.
     Passed,
@@ -275,6 +239,7 @@ impl_str_enum!(EngineStatus, "Uppercase wire status label (`\"PASSED\"`, `\"FAIL
 /// Detected EN 16931 XML syntax binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 #[non_exhaustive]
 pub enum XmlSyntax {
     /// OASIS UBL 2.1 `<Invoice>`.
@@ -307,6 +272,7 @@ impl fmt::Display for XmlSyntax {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "UPPERCASE"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub enum ContainerKind {
     /// Standalone XML e-invoice (`UBL 2.1` or `CII D16B`).
     Xml,
@@ -323,15 +289,19 @@ impl_str_enum!(ContainerKind, "Uppercase container label (`\"XML\"` or `\"PDFA3\
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub struct DocumentIdentity {
     /// Invoice or credit note number (`BT-1`).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub invoice_number: Option<String>,
     /// Document issue date (`BT-2`, `YYYY-MM-DD`).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub issue_date: Option<String>,
     /// Seller legal or trading name (`BT-27` / `BT-28`).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub seller_name: Option<String>,
 }
 
@@ -339,6 +309,7 @@ pub struct DocumentIdentity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub struct EngineReport {
     /// Stage identifier (`"pdfa3_iso19005"`, `"xsd_schema"`, `"en16931_model"`, `"anaf_cius_ro"`).
     pub id: EngineId,
@@ -358,6 +329,7 @@ pub struct EngineReport {
     pub warning_count: usize,
     /// Reason why the stage was skipped, when `status == EngineStatus::Skipped`.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub skip_reason: Option<String>,
 }
 
@@ -386,11 +358,13 @@ impl EngineReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub struct Violation {
     /// Canonical specification rule code (e.g. `"BR-RO-100"`, `"BR-RO-110"`, `"BR-RO-Z2"`, `"BR-RO-CUI"`, `"BR-CO-15"`).
     pub code: String,
     /// Specific ANAF Schematron assertion sub-identifier when applicable (e.g. `"BR-RO-101"`, `"BR-DEC-RO-09"`, `"BR-RO-L1024"`).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub rule_sub_id: Option<String>,
     /// Engine stage that produced this finding.
     pub engine: EngineId,
@@ -398,25 +372,33 @@ pub struct Violation {
     pub severity: Severity,
     /// EN 16931 Business Term / Group or ISO clause (e.g. `"BT-37"`, `"BG-4"`, `"ISO 19005-3:6.8"`).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub business_term: Option<String>,
     /// Localized diagnostic message (`Locale::En` or `Locale::Ro`).
     pub message: String,
     /// Element path, XPath-like location, or line/column reference.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub location: Option<String>,
     /// Expected normative value or constraint.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub expected: Option<String>,
     /// Observed value in the document.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub actual: Option<String>,
     /// Actionable remediation hint in the requested [`Locale`].
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub hint: Option<String>,
 }
 
 /// Configuration controlling how [`crate::validate_bytes`] and [`crate::validate_xml`] inspect a document.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default, rename_all = "camelCase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 #[non_exhaustive]
 #[expect(
     clippy::struct_excessive_bools,
@@ -544,6 +526,7 @@ impl ValidateOptions {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "tsify", derive(tsify::Tsify))]
 pub struct ValidationReport {
     /// `true` if zero `Fatal` violations occurred (and zero `Warning`s when `deny_warnings` is set).
     pub is_valid: bool,
@@ -555,12 +538,15 @@ pub struct ValidationReport {
     pub container: ContainerKind,
     /// Detected XML syntax binding (`OASIS UBL 2.1 Invoice/CreditNote` or `UN/CEFACT CII D16B`).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub detected_syntax: Option<XmlSyntax>,
     /// Raw `BT-24` Specification Identifier (`CustomizationID` / `GuidelineSpecifiedDocumentContextParameter/ID`).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub customization_id: Option<String>,
     /// Extracted invoice identity (`BT-1`, `BT-2`, `BT-27`) when readable.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub identity: Option<DocumentIdentity>,
     /// Per-stage execution summaries.
     pub engines: Vec<EngineReport>,
@@ -568,5 +554,6 @@ pub struct ValidationReport {
     pub violations: Vec<Violation>,
     /// Optional SVRL XML report when `include_svrl = true` and crate feature `svrl` is enabled.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "tsify", tsify(optional))]
     pub svrl_xml: Option<String>,
 }

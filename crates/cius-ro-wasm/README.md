@@ -14,12 +14,14 @@ wasm-pack build crates/cius-ro-wasm --target web --release
 
 ## JavaScript / TypeScript API
 
-Generated `pkg/cius_ro_wasm.d.ts` bundles ship strict TypeScript interfaces (`ValidationReport`, `Violation`, `EngineReport`, `IdentifierInspection`, `RuleView`, `Locale`, `Severity`, etc.).
+Generated `pkg/cius_ro_wasm.d.ts` bundles ship strict `tsify`-generated TypeScript interfaces (`ValidateOptions`, `ValidationReport`, `Violation`, `EngineReport`, `IdentifierInspection`, `RuleView`, `Locale`, `Severity`, etc.).
 
-- `validateInvoice(bytes: Uint8Array, locale?: "en" | "ro", denyWarnings?: boolean, includeSvrl?: boolean): ValidationReport`
+- `validateInvoice(bytes: Uint8Array, options?: ValidateOptions | null): ValidationReport`
 - `extractPdfXml(bytes: Uint8Array): Uint8Array`
-- `validateIdentifier(input: string, locale?: "en" | "ro"): IdentifierInspection`
-- `listRules(locale?: "en" | "ro"): RuleView[]`
+- `validateIdentifier(input: string, locale?: Locale | null): IdentifierInspection`
+- `listRules(locale?: Locale | null): RuleView[]`
+
+All [`ValidateOptions`](https://docs.rs/cius-ro/latest/cius_ro/struct.ValidateOptions.html) flags (`locale`, `runPdfa`, `runXsd`, `runEn16931`, `runCiusRoRules`, `runChecksums`, `strictCiusRoCustomization`, `denyWarnings`, `includeSvrl`) are optional and fall back to their defaults when omitted.
 
 > **Note:** On `wasm32-unknown-unknown`, XML well-formedness, `<!DOCTYPE` / `<!ENTITY` XXE blocking, CEN EN 16931 element-order and fixed-point decimal math, all 122 ANAF `BR-RO-*` assertions, `cius-ro-id` checksums, and ISO 19005-3 `PDF/A-3` container checks run in memory; multi-file filesystem XSD compilation is marked `"SKIPPED"`.
 
@@ -33,7 +35,11 @@ import init, {
 
 await init();
 
-const report = validateInvoice(invoiceUint8Array, "ro", true, false);
+const report = validateInvoice(invoiceUint8Array, {
+  locale: "ro",
+  denyWarnings: true,
+  includeSvrl: false,
+});
 if (!report.isValid) {
   console.error(report.violations);
 }

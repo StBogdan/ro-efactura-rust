@@ -105,15 +105,15 @@ impl RoIban {
     /// Returns [`IbanError`] if the input is empty, does not begin with `"RO"`, is not 24 characters long,
     /// violates the `BNR` structure, or fails `ISO 7064 MOD 97-10` check-digit verification.
     pub fn parse(raw: &str) -> Result<Self, IbanError> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(IbanError::Empty);
+        }
         let mut buf = [0u8; 24];
         let mut len = 0usize;
         let mut all_ascii = true;
 
-        for ch in raw
-            .chars()
-            .take(crate::MAX_ID_SCAN_CHARS)
-            .filter(|c| !c.is_whitespace() && *c != '-')
-        {
+        for ch in trimmed.chars().filter(|c| !c.is_whitespace() && *c != '-') {
             if (len == 0 && !matches!(ch, 'R' | 'r')) || (len == 1 && !matches!(ch, 'O' | 'o')) {
                 return Err(IbanError::NotRomanianCountryCode);
             }
@@ -129,22 +129,13 @@ impl RoIban {
         }
 
         if len == 0 {
-            return if raw.len() > crate::MAX_ID_SCAN_CHARS {
-                Err(IbanError::InvalidLength { len: 0 })
-            } else {
-                Err(IbanError::Empty)
-            };
+            return Err(IbanError::Empty);
         }
         if len < 2 {
             return Err(IbanError::NotRomanianCountryCode);
         }
-        if raw.len() > crate::MAX_ID_SCAN_CHARS || len != 24 {
-            let reported = if raw.len() > crate::MAX_ID_SCAN_CHARS && len == 24 {
-                buf.len() + 1
-            } else {
-                len
-            };
-            return Err(IbanError::InvalidLength { len: reported });
+        if len != buf.len() {
+            return Err(IbanError::InvalidLength { len });
         }
         if !all_ascii
             || !buf[2..4].iter().all(u8::is_ascii_digit)
@@ -241,4 +232,29 @@ fn compute_ro_iban_check_digits_unchecked(bank_code: &[u8], account: &[u8]) -> u
             }
         });
     u8::try_from(98 - rem).expect("ISO 7064 MOD 97-10 check digits are in 2..=98")
+}
+
+pub(crate) fn looks_like_ro_iban_candidate(raw: &str) -> bool {
+    let mut iter = raw
+        .trim()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-');
+    let (Some(c0), Some(c1)) = (iter.next(), iter.next()) else {
+        return false;
+    };
+    if !c0.eq_ignore_ascii_case(&'R') || !c1.eq_ignore_ascii_case(&'O') {
+        return false;
+    }
+    let mut rest_count = 0usize;
+    let mut has_alpha = false;
+    for ch in iter.take(23) {
+        rest_count += 1;
+        if ch.is_ascii_alphabetic() {
+            has_alpha = true;
+        }
+        if rest_count >= 12 && has_alpha {
+            return true;
+        }
+    }
+    false
 }

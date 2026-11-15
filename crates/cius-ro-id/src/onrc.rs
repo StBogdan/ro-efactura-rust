@@ -4,7 +4,10 @@
 //! 1. **Classic format** (`J40/1234/2022`, `F12/89/2021`, `C08/5/2019`): `[JFC]` + county (`1..=40`, `51`, `52`)
 //!    + `/` + sequence number + `/` + 4-digit year (`1990..=2100`).
 //! 2. **Law 265/2022 electronic format** (rolled out July 2024, e.g. `J2024001234005`):
-//!    `[JFC]` + 4-digit year (`YYYY`) + 6-digit national sequence (`NNNNNN`) + 2-digit county (`00..=40`, `51`, `52`) + 1 control digit (`[JFC]\d{13}`).
+//!    `[JFC]` + 4-digit year (`YYYY`) + 6-digit national sequence (`NNNNNN`) + 2-digit county (`00..=40`, `51`, `52`) + 1 trailing control digit (`[JFC]\d{13}`).
+//!    Romanian Law 265/2022 does not publish a mathematical checksum formula for the trailing
+//!    control digit (it is assigned internally by ONRC's portal), so [`Onrc::parse`] validates it
+//!    structurally as an ASCII digit (`0..=9`) rather than computing a checksum.
 
 use core::fmt;
 use core::str::FromStr;
@@ -65,7 +68,11 @@ pub enum OnrcFormat {
         sequence: u32,
         /// Two-digit county marker (`00..=40`, `51`, `52`).
         county: u8,
-        /// Trailing control digit (`0..=9`).
+        /// Trailing control digit (`0..=9`), parsed structurally without checksum verification.
+        ///
+        /// Law 265/2022 does not publish a mathematical modulo/weight formula for this digit
+        /// (it is generated internally by ONRC's registry system), so [`Onrc::parse`] checks only
+        /// that it is an ASCII digit (`0..=9`).
         check_digit: u8,
     },
 }
@@ -161,20 +168,23 @@ pub struct Onrc {
 impl_str_serde!(Onrc, "a valid Romanian ONRC Trade Register number");
 
 impl Onrc {
-    /// Parses and validates a classic or Law 265/2022 `ONRC` number.
+    /// Parses and structurally validates a classic or Law 265/2022 `ONRC` number.
+    ///
+    /// For [`OnrcFormat::Law265`], the trailing control digit (`check_digit`) is validated only as
+    /// an ASCII digit (`0..=9`) because Law 265/2022 does not publish an algorithmic checksum formula.
     ///
     /// # Errors
     ///
     /// Returns [`OnrcError`] if the input is empty, lacks a `'J'`/`'F'`/`'C'` prefix, has an invalid
     /// structure, or specifies an out-of-range county, sequence, or registration year.
     pub fn parse(raw: &str) -> Result<Self, OnrcError> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(OnrcError::Empty);
+        }
         let mut buf = [0u8; 32];
         let mut len = 0usize;
-        for ch in raw
-            .chars()
-            .take(crate::MAX_ID_SCAN_CHARS)
-            .filter(|c| !c.is_whitespace())
-        {
+        for ch in trimmed.chars().filter(|c| !c.is_whitespace()) {
             let Ok(b) = u8::try_from(ch) else {
                 return Err(if len == 0 {
                     OnrcError::InvalidRegisterPrefix
@@ -190,12 +200,6 @@ impl Onrc {
             }
             buf[len] = b;
             len += 1;
-        }
-        if raw.len() > crate::MAX_ID_SCAN_CHARS {
-            return Err(OnrcError::InvalidFormat);
-        }
-        if len == 0 {
-            return Err(OnrcError::Empty);
         }
 
         let register = OnrcRegister::from_ascii(buf[0]).ok_or(OnrcError::InvalidRegisterPrefix)?;
@@ -340,10 +344,7 @@ impl FromStr for Onrc {
 /// (starts with `J`, `F`, or `C` followed by a digit or `'/'`, ignoring whitespace).
 #[must_use]
 pub fn is_onrc_candidate(raw: &str) -> bool {
-    let mut non_ws = raw
-        .chars()
-        .take(crate::MAX_ID_SCAN_CHARS)
-        .filter(|c| !c.is_whitespace());
+    let mut non_ws = raw.trim().chars().filter(|c| !c.is_whitespace());
     let (Some(c0), Some(c1)) = (non_ws.next(), non_ws.next()) else {
         return false;
     };

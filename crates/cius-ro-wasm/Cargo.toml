@@ -22,11 +22,10 @@ all-features = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cius-ro = { workspace = true, features = ["xsd", "pdfa3", "serde", "svrl", "wasm-js"] }
-cius-ro-id = { workspace = true, features = ["std", "serde"] }
+cius-ro = { workspace = true, features = ["xsd", "pdfa3", "serde", "svrl", "wasm-js", "tsify"] }
+cius-ro-id = { workspace = true, features = ["std", "serde", "tsify"] }
+tsify.workspace = true
 wasm-bindgen.workspace = true
-serde.workspace = true
-serde-wasm-bindgen.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

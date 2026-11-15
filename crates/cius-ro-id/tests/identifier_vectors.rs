@@ -305,11 +305,66 @@ fn test_serde_canonical_strings_and_invariant_enforcement() {
 }
 
 #[test]
+fn test_whitespace_padded_identifiers_succeed() {
+    let huge_spaces = " ".repeat(100_000);
+    let nbsp_padding = "\u{00A0}".repeat(300);
+
+    // Valid identifiers with >512 bytes/chars of surrounding ASCII or multi-byte whitespace succeed
+    assert_eq!(
+        Cui::parse(&format!("{huge_spaces}RO45678918{huge_spaces}"))
+            .unwrap()
+            .digits(),
+        "45678918"
+    );
+    assert_eq!(
+        Cui::parse(&format!("{nbsp_padding}RO45678918{nbsp_padding}"))
+            .unwrap()
+            .digits(),
+        "45678918"
+    );
+    assert_eq!(
+        Cnp::parse(&format!("{huge_spaces}1900101410011{huge_spaces}"))
+            .unwrap()
+            .as_str(),
+        "1900101410011"
+    );
+    assert!(is_anaf_b2c_placeholder(&format!(
+        "{huge_spaces}0000000000000{huge_spaces}"
+    )));
+    assert_eq!(
+        RoIban::parse(&format!(
+            "{huge_spaces}RO49 AAAA 1B31 0075 9384 0000{huge_spaces}"
+        ))
+        .unwrap()
+        .as_str(),
+        "RO49AAAA1B31007593840000"
+    );
+    assert_eq!(
+        Onrc::parse(&format!("{huge_spaces}J40/1234/2022{huge_spaces}"))
+            .unwrap()
+            .to_string(),
+        "J40/1234/2022"
+    );
+    assert_eq!(
+        County::from_code(&format!("{huge_spaces}RO-CJ{huge_spaces}")),
+        Some(County::CJ)
+    );
+    assert_eq!(
+        BucharestSector::from_code(&format!("{huge_spaces}SECTOR1{huge_spaces}")),
+        Some(BucharestSector::Sector1)
+    );
+    assert!(
+        inspect_identifier(&format!("{huge_spaces}RO45678918{huge_spaces}"), Locale::En).is_valid
+    );
+}
+
+#[test]
 fn test_bounded_overlong_inputs_do_not_panic() {
     let huge_digits = "9".repeat(100_000);
     let huge_spaces = " ".repeat(100_000);
 
-    // Parsers short-circuit in O(1) as soon as non-separator count exceeds format cap
+    // Parsers short-circuit in O(1) as soon as non-separator count exceeds format cap,
+    // and report Empty (never InvalidLength) on pure-whitespace inputs.
     assert_eq!(
         Cui::parse(&huge_digits),
         Err(CuiError::InvalidLength { len: 11 })
@@ -318,10 +373,10 @@ fn test_bounded_overlong_inputs_do_not_panic() {
         Cui::parse(&format!("RO{huge_digits}")),
         Err(CuiError::InvalidLength { len: 11 })
     );
-    assert!(Cui::parse(&huge_spaces).is_err());
+    assert_eq!(Cui::parse(&huge_spaces), Err(CuiError::Empty));
     assert_eq!(
         Cui::parse(&format!("RO45678918{huge_spaces}GARBAGE")),
-        Err(CuiError::InvalidLength { len: 11 })
+        Err(CuiError::InvalidCharacters)
     );
 
     assert_eq!(parse_cui_candidate(&huge_digits), None);
@@ -335,10 +390,16 @@ fn test_bounded_overlong_inputs_do_not_panic() {
         Cnp::parse(&huge_digits),
         Err(CnpError::InvalidLength { len: 14 })
     );
-    assert!(Cnp::parse(&huge_spaces).is_err());
-    assert!(Cnp::parse(&format!("1900101410011{huge_spaces}GARBAGE")).is_err());
+    assert_eq!(
+        Cnp::parse(&huge_spaces),
+        Err(CnpError::InvalidLength { len: 0 })
+    );
+    assert_eq!(
+        Cnp::parse(&format!("1900101410011{huge_spaces}GARBAGE")),
+        Err(CnpError::InvalidCharacters)
+    );
     assert!(!is_anaf_b2c_placeholder(&format!(
-        "0000000000000{huge_spaces}"
+        "0000000000000{huge_spaces}GARBAGE"
     )));
 
     assert_eq!(
@@ -349,7 +410,7 @@ fn test_bounded_overlong_inputs_do_not_panic() {
         RoIban::parse(&format!("DE{huge_digits}")),
         Err(IbanError::NotRomanianCountryCode)
     );
-    assert!(RoIban::parse(&huge_spaces).is_err());
+    assert_eq!(RoIban::parse(&huge_spaces), Err(IbanError::Empty));
     assert_eq!(
         RoIban::parse(&format!("RO49AAAA1B31007593840000{huge_spaces}X")),
         Err(IbanError::InvalidLength { len: 25 })
