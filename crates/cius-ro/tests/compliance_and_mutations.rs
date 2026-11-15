@@ -1947,7 +1947,7 @@ fn standalone_evaluate_cius_ro_rules_reports_fatal_on_malformed_or_unrecognized_
             .checksums(false),
     );
     assert_eq!(disabled.report.status, EngineStatus::Skipped);
-    assert!(disabled.violations.is_empty());
+    assert_eq!(disabled.violations, Vec::new());
 
     // 7. validate_xml with xsd(false).en16931(false) must still reject malformed/unknown XML
     let only_ro_opts = ValidateOptions::default().xsd(false).en16931(false);
