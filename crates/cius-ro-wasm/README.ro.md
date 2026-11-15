@@ -4,7 +4,7 @@
 
 Pachet WebAssembly (`wasm-bindgen`) pentru [`cius-ro`](https://crates.io/crates/cius-ro) și [`cius-ro-id`](https://crates.io/crates/cius-ro-id).
 
-Permite validarea facturilor electronice **ANAF `RO e-Factura`** (`CIUS-RO 1.0.1`), extragerea fișierului `efactura.xml` din documente hibride `PDF/A-3` și verificarea codurilor `CUI`, `CNP`, `ONRC` și `IBAN` direct în browser, Cloudflare Workers, Deno sau Node.js — fără a trimite datele facturilor către un server extern.
+Validează facturi electronice **ANAF `RO e-Factura`** (`CIUS-RO 1.0.1`), extrage `efactura.xml` din documente hibride `PDF/A-3` și verifică coduri `CUI`, `CNP`, `ONRC` și `IBAN` direct în browser, Cloudflare Workers, Deno sau Node.js — fără a trimite facturile către un server.
 
 ## Compilare
 
@@ -21,7 +21,7 @@ Fișierele generate `pkg/cius_ro_wasm.d.ts` includ definiții TypeScript complet
 - `validateIdentifier(input: string, locale?: "en" | "ro"): IdentifierInspection`
 - `listRules(locale?: "en" | "ro"): RuleView[]`
 
-> **Notă:** Pe ținta `wasm32-unknown-unknown`, validarea sintaxei XML, protecția XXE (`<!DOCTYPE` / `<!ENTITY`), ordinea elementelor și aritmetica zecimală CEN EN 16931, toate cele 122 de reguli ANAF `BR-RO-*`, cifrele de control `cius-ro-id` și inspecția containerului `PDF/A-3` rulează complet în memorie; compilarea schemelor XSD multi-fișier pe disc este marcată `"SKIPPED"`.
+> **Notă:** Pe `wasm32-unknown-unknown`, validarea sintaxei XML, protecția XXE (`<!DOCTYPE` / `<!ENTITY`), modelul CEN EN 16931, toate cele 122 de reguli ANAF `BR-RO-*`, verificările `cius-ro-id` și verificarea containerului `PDF/A-3` rulează direct în memorie; validarea XSD multi-fișier pe disc este marcată `"SKIPPED"`.
 
 ```js
 import init, {

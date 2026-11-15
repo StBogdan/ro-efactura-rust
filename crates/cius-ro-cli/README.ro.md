@@ -2,9 +2,9 @@
 
 [**English (`README.md`)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/crates/cius-ro-cli/README.md) · [**Documentația principală**](https://github.com/StBogdan/ro-efactura-rust/blob/main/README.ro.md)
 
-Utilitar în linie de comandă (`cius-ro`) pentru validarea facturilor electronice **ANAF `RO e-Factura`** (`CIUS-RO 1.0.1`) și a codurilor fiscale din România.
+CLI (`cius-ro`) pentru validarea în terminal sau CI/CD a facturilor electronice **ANAF `RO e-Factura`** (`CIUS-RO 1.0.1`) și a codurilor fiscale din România.
 
-Verifică atât fișiere XML (`OASIS UBL 2.1` și `UN/CEFACT CII D16B`), cât și documente hibride `PDF/A-3` (`efactura.xml`) dintr-un singur executabil nativ — fără Java/JVM sau utilitare externe.
+Validează atât fișiere XML (`OASIS UBL 2.1` și `UN/CEFACT CII D16B`), cât și documente hibride `PDF/A-3` (`efactura.xml`) dintr-un singur executabil nativ — fără Java/JVM sau dependențe externe.
 
 ## Instalare
 
@@ -42,7 +42,7 @@ cius-ro rules --markdown --lang ro > RULES.ro.md
 | :---: | :--- |
 | `0` | Toate documentele sau codurile verificate sunt valide. |
 | `1` | Au fost găsite erori de conformitate (sau codul regulii căutate nu există). |
-| `2` | Eroare la citirea/scrierea fișierului sau argumente invalide în linia de comandă. |
+| `2` | Eroare la citirea/scrierea fișierului sau argumente CLI invalide. |
 
 ## Licență
 

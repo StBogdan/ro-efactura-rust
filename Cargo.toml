@@ -13,6 +13,7 @@ edition = "2024"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/StBogdan/ro-efactura-rust"
+homepage = "https://facturx.openeurotech.com"
 authors = ["Bogdan Stoicescu"]
 
 [workspace.lints.rust]

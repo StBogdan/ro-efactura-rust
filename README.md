@@ -2,9 +2,9 @@
 
 [**Română (`README.ro.md`)**](./README.ro.md) · [**Rule Reference (EN)**](./docs/RULES.en.md) · [**Catalog Reguli (RO)**](./docs/RULES.ro.md)
 
-Validate Romanian electronic invoices (**ANAF `RO e-Factura`** / **`CIUS-RO 1.0.1`**) and fiscal identifiers in pure Rust — with no JVM, no external XML tools, and exact base-10 decimal math.
+Validate Romanian electronic invoices (**ANAF `RO e-Factura`** / **`CIUS-RO 1.0.1`**) and fiscal identifiers in pure Rust — with no JVM or external XML tools.
 
-Built for Romania's national B2B, B2G, and B2C e-invoicing system (*OUG 120/2021*, *Law 296/2023*, and *OUG 69/2024*, aligned with ANAF `ROeFactura v1.0.9`), and open-sourced from the validation engine behind [**VeriFactura**](https://verifactura.co).
+Built for Romania's national B2B, B2G, and B2C e-invoicing system (*OUG 120/2021*, *Law 296/2023*, and *OUG 69/2024*, aligned with ANAF `ROeFactura v1.0.9`), and used on the [**VeriFactura**](https://facturx.openeurotech.com) website.
 
 ## Crates
 

@@ -9,12 +9,12 @@ Bibliotecă în Rust pentru parsarea, normalizarea și validarea codurilor fisca
 ## Ce validează
 
 - **`Cui`** — *Cod Unic de Înregistrare* (`CUI` / `CIF`): tip `Copy` pe stivă (`2`–`10` cifre, cu sau fără prefixul de TVA `RO`), verificat cu cheia oficială modulo-11 a Ministerului Finanțelor (`753217532`).
-- **`Cnp` și `CnpOrPlaceholder`** — *Cod Numeric Personal*: tipuri `Copy` fără alocare pe heap pentru CNP-uri de 13 cifre (sex/secol `1`–`9`, data nașterii, județ și cifra de control modulo-11 `279146358279`) și codul ANAF `0000000000000` pentru consumatori persoane fizice B2C (*OUG 69/2024*).
+- **`Cnp` și `CnpOrPlaceholder`** — *Cod Numeric Personal*: tipuri `Copy` pe stivă pentru CNP-uri de 13 cifre (sex/secol `1`–`9`, data nașterii, județ și cifra de control modulo-11 `279146358279`) și codul ANAF `0000000000000` pentru clienți persoane fizice pe facturile B2C (*OUG 69/2024*).
 - **`Onrc`** — *Număr de ordine în Registrul Comerțului*: tip `Copy` pe stivă ce recunoaște formatul clasic `J40/1234/2022` (inclusiv certificatele 2003–2008 cu dată `ZZ.LL.AAAA`) și formatul nou de 14 caractere introdus prin *Legea 265/2022* (`J2024001234005`).
 - **`RoIban`** — Cont bancar IBAN românesc de 24 de caractere (`ROkk BBBB ...`), verificat conform standardului `ISO/IEC 7064 MOD 97-10`.
 - **`County`** — Cele 42 de coduri de județ `ISO 3166-2:RO` (`RO-AB`..`RO-VN` și `RO-B`), cu recunoaștere tolerantă la diacritice și abrevieri (`"Jud. Timiș"` -> `County::TM`).
 - **`BucharestSector`** — Codurile ANAF `SECTOR1`..`SECTOR6` pentru Municipiul București, cu normalizare automată (`"Sectorul 1"` -> `BucharestSector::Sector1`).
-- **`inspect_identifier`** — Detectează automat tipul identificatorului și returnează diagnostice structurate în [`Locale::Ro`] sau [`Locale::En`].
+- **`inspect_identifier`** — Detectează automat tipul codului și returnează rezultatul validării și mesajul explicativ în [`Locale::Ro`] sau [`Locale::En`].
 
 ## Utilizare
 
