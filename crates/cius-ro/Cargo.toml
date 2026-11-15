@@ -22,7 +22,7 @@ all-features = true
 [features]
 default = ["xsd", "pdfa3", "serde", "svrl"]
 xsd = ["dep:uppsala", "dep:tempfile"]
-pdfa3 = ["dep:lopdf", "dep:ttf-parser", "en16931-formats/zugferd"]
+pdfa3 = ["dep:lopdf", "dep:ttf-parser"]
 wasm-js = ["lopdf?/wasm_js"]
 serde = ["dep:serde", "cius-ro-id/serde", "en16931/serde", "en16931-formats/serde"]
 svrl = ["en16931/svrl"]
@@ -33,12 +33,12 @@ en16931.workspace = true
 en16931-formats.workspace = true
 roxmltree.workspace = true
 
-uppsala = { workspace = true, optional = true }
 ttf-parser = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 lopdf = { workspace = true, optional = true }
+uppsala = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]

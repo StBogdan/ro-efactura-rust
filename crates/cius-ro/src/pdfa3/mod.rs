@@ -1,8 +1,8 @@
 //! Binary ISO 19005-3 (`PDF/A-3`) container inspector and `efactura.xml` attachment extractor.
 //!
-//! Operates in memory (native and `wasm32`) via `lopdf`, `ttf-parser`, `roxmltree`,
-//! and `en16931_formats::zugferd`, supporting Romanian `efactura.xml` as well as `factur-x.xml`,
-//! `zugferd-invoice.xml`, and `xrechnung.xml`.
+//! Operates in memory (native and `wasm32`) via `lopdf`, `ttf-parser`, and `roxmltree`,
+//! supporting Romanian `efactura.xml` as well as `factur-x.xml`, `zugferd-invoice.xml`,
+//! `xrechnung.xml`, and `order-x.xml` in a single bounded PDF parse pass.
 //!
 //! All stream decompressions and object-graph walks are bounded (`64 MiB` per stream, `128 MiB`
 //! cumulative decompression budget per document, max `10,000` visited name-tree objects, max depth `32`)
@@ -16,23 +16,20 @@ mod xmp;
 
 use std::fmt;
 
-use en16931_formats::zugferd;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 pub use self::extract::extract_xml_from_pdf;
 use self::loader::{PdfLoadError, load_bounded_document};
-use crate::stage_acc::{StageAcc, StageFinding};
-use crate::types::{
-    EngineId, EngineReport, Locale, LocalizedDisplay, LocalizedFmt, Severity, Violation,
-};
+use crate::stage_acc::{StageAcc, StageFinding, tr_fmt};
+use crate::types::{EngineId, EngineReport, Locale, LocalizedDisplay, LocalizedFmt, Violation};
 
 pub(crate) const ENGINE_ID: EngineId = EngineId::Pdfa3Iso19005;
 pub(crate) const ENGINE_NAME: &str = "ISO 19005-3 (PDF/A-3) & efactura.xml Inspector";
 pub(crate) const ENGINE_VERSION: &str = "ISO 19005-3:2012";
 
-pub(super) const MAX_STREAM_BYTES: usize = zugferd::Limits::DEFAULT_MAX_STREAM_BYTES;
-pub(super) const MAX_TOTAL_BYTES: usize = zugferd::Limits::DEFAULT_MAX_TOTAL_BYTES;
-pub(super) const MAX_TREE_OBJECTS: usize = zugferd::Limits::DEFAULT_MAX_OBJECTS;
+pub(super) const MAX_STREAM_BYTES: usize = 64 * 1024 * 1024;
+pub(super) const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
+pub(super) const MAX_TREE_OBJECTS: usize = 10_000;
 pub(super) const MAX_TREE_DEPTH: usize = 32;
 
 /// Error returned by [`extract_xml_from_pdf`] when XML extraction from a PDF container fails.
@@ -129,21 +126,29 @@ impl PdfBudget {
         }
     }
 
+    pub(super) fn stream_cap(&self) -> usize {
+        MAX_STREAM_BYTES.min(self.remaining_total)
+    }
+
+    pub(super) fn consume(&mut self, bytes: usize) {
+        self.remaining_total = self.remaining_total.saturating_sub(bytes);
+    }
+
     pub(super) fn decode_stream(
         &mut self,
         stream: &Stream,
     ) -> Result<Vec<u8>, PdfStreamDecodeError> {
-        let cap = MAX_STREAM_BYTES.min(self.remaining_total);
+        let cap = self.stream_cap();
         if stream.dict.get(b"Filter").is_err() {
             if stream.content.len() > cap {
                 return Err(PdfStreamDecodeError::LimitExceeded);
             }
-            self.remaining_total = self.remaining_total.saturating_sub(stream.content.len());
+            self.consume(stream.content.len());
             return Ok(stream.content.clone());
         }
         match stream.decompressed_content_with_limit(cap) {
             Ok(bytes) if bytes.len() <= cap => {
-                self.remaining_total = self.remaining_total.saturating_sub(bytes.len());
+                self.consume(bytes.len());
                 Ok(bytes)
             }
             Ok(_)
@@ -152,10 +157,6 @@ impl PdfBudget {
             })) => Err(PdfStreamDecodeError::LimitExceeded),
             Err(err) => Err(PdfStreamDecodeError::Corrupt(err.to_string())),
         }
-    }
-
-    pub(super) fn measure_stream(&mut self, stream: &Stream) -> Result<(), PdfStreamDecodeError> {
-        self.decode_stream(stream).map(drop)
     }
 }
 
@@ -213,12 +214,11 @@ pub fn inspect_pdfa3(bytes: &[u8], run_pdfa_checks: bool, locale: Locale) -> Pdf
             c
         }
         Err(err) => {
-            let msg = match acc.locale() {
-                Locale::En => format!("PDF Document Catalog (/Root) is missing or invalid: {err}"),
-                Locale::Ro => {
-                    format!("Catalogul documentului PDF (/Root) lipsește sau este invalid: {err}")
-                }
-            };
+            let msg = tr_fmt!(
+                acc,
+                "PDF Document Catalog (/Root) is missing or invalid: {err}",
+                "Catalogul documentului PDF (/Root) lipsește sau este invalid: {err}"
+            );
             acc.fatal_clause("PDFA3-6.1-CATALOG", "ISO 19005-3:6.1", "Trailer /Root", msg);
             let (report, violations) = acc.into_report();
             return PdfInspectionOutcome {
@@ -233,7 +233,6 @@ pub fn inspect_pdfa3(bytes: &[u8], run_pdfa_checks: bool, locale: Locale) -> Pdf
     fonts::check_embedded_fonts(&doc, &mut budget, &mut acc);
     let xmp_doc_filename = xmp::check_xmp_metadata(&doc, catalog, &mut budget, &mut acc);
     let extracted_xml = extract::check_associated_files_and_extract(
-        bytes,
         &doc,
         catalog,
         xmp_doc_filename.as_deref(),
@@ -267,6 +266,10 @@ fn inspect_pdfa3_disabled(bytes: &[u8], locale: Locale) -> PdfInspectionOutcome 
                 PdfExtractError::ResourceLimitExceeded(_) => "PDFA3-6.1-RESOURCE-LIMIT",
                 PdfExtractError::NoEmbeddedXmlInvoice => "PDFA3-6.8-NO-INVOICE-PAYLOAD",
             };
+            let violation = StageFinding::fatal(code, err.message(locale))
+                .term("ISO 19005-3:6.8")
+                .location("Catalog /Names/EmbeddedFiles")
+                .into_violation(ENGINE_ID);
             PdfInspectionOutcome {
                 report: EngineReport::skipped(
                     ENGINE_ID,
@@ -274,18 +277,7 @@ fn inspect_pdfa3_disabled(bytes: &[u8], locale: Locale) -> PdfInspectionOutcome 
                     ENGINE_VERSION,
                     "Disabled by ValidateOptions",
                 ),
-                violations: vec![Violation {
-                    code: code.to_owned(),
-                    rule_sub_id: None,
-                    engine: ENGINE_ID,
-                    severity: Severity::Fatal,
-                    business_term: Some("ISO 19005-3:6.8".to_owned()),
-                    message: err.message(locale),
-                    location: Some("Catalog /Names/EmbeddedFiles".to_owned()),
-                    expected: None,
-                    actual: None,
-                    hint: None,
-                }],
+                violations: vec![violation],
                 extracted_xml: None,
             }
         }
@@ -303,14 +295,11 @@ fn load_bounded_for_inspection(
             Some(doc)
         }
         Err(PdfLoadError::LimitExceeded(detail)) => {
-            let msg = match acc.locale() {
-                Locale::En => format!(
-                    "PDF container exceeded decompression or object-graph safety bounds: {detail}"
-                ),
-                Locale::Ro => format!(
-                    "Containerul PDF a depășit limitele de securitate la decomprimare sau parcurgere: {detail}"
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "PDF container exceeded decompression or object-graph safety bounds: {detail}",
+                "Containerul PDF a depășit limitele de securitate la decomprimare sau parcurgere: {detail}"
+            );
             acc.fatal_clause(
                 "PDFA3-6.1-RESOURCE-LIMIT",
                 "ISO 19005-3:6.1",
@@ -320,14 +309,11 @@ fn load_bounded_for_inspection(
             None
         }
         Err(PdfLoadError::Parse(detail)) => {
-            let msg = match acc.locale() {
-                Locale::En => {
-                    format!("PDF cross-reference table or object syntax is unreadable: {detail}")
-                }
-                Locale::Ro => {
-                    format!("Tabela XRef sau sintaxa obiectelor PDF nu poate fi citită: {detail}")
-                }
-            };
+            let msg = tr_fmt!(
+                acc,
+                "PDF cross-reference table or object syntax is unreadable: {detail}",
+                "Tabela XRef sau sintaxa obiectelor PDF nu poate fi citită: {detail}"
+            );
             fail_clause_hint(
                 acc,
                 "PDFA3-6.1-PARSE",
@@ -355,14 +341,11 @@ fn check_header_and_binary_comment(bytes: &[u8], acc: &mut StageAcc) {
         return;
     };
     if pos > 0 {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "%PDF- header is preceded by {pos} extraneous byte(s); ISO 19005-3 requires byte offset 0."
-            ),
-            Locale::Ro => format!(
-                "Antetul %PDF- este precedat de {pos} octeți suplimentari; ISO 19005-3 impune poziția 0."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "%PDF- header is preceded by {pos} extraneous byte(s); ISO 19005-3 requires byte offset 0.",
+            "Antetul %PDF- este precedat de {pos} octeți suplimentari; ISO 19005-3 impune poziția 0."
+        );
         acc.warn_clause(
             "PDFA3-6.1.2-LEADING-BYTES",
             "ISO 19005-3:6.1.2",
@@ -389,14 +372,11 @@ fn check_header_and_binary_comment(bytes: &[u8], acc: &mut StageAcc) {
             if high_bits >= 4 {
                 acc.pass();
             } else {
-                let msg = match acc.locale() {
-                    Locale::En => format!(
-                        "PDF header binary comment contains {high_bits} high-bit (>0x7F) byte(s); ISO 19005-3 requires at least 4."
-                    ),
-                    Locale::Ro => format!(
-                        "Comentariul binar din antetul PDF conține {high_bits} octeți >0x7F; ISO 19005-3 cere cel puțin 4."
-                    ),
-                };
+                let msg = tr_fmt!(
+                    acc,
+                    "PDF header binary comment contains {high_bits} high-bit (>0x7F) byte(s); ISO 19005-3 requires at least 4.",
+                    "Comentariul binar din antetul PDF conține {high_bits} octeți >0x7F; ISO 19005-3 cere cel puțin 4."
+                );
                 acc.warn_clause(
                     "PDFA3-6.1.2-BINARY-COMMENT",
                     "ISO 19005-3:6.1.2",

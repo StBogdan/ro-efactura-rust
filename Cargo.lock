@@ -394,8 +394,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb94dbcca0f0e5c9ea6857d8fc73e7b1658cad4dd8a8c9d1f4f1b5fbe41f25aa"
 dependencies = [
  "en16931",
- "flate2",
- "lopdf",
  "roxmltree",
  "rust_decimal",
  "serde",

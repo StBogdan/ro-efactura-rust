@@ -3,7 +3,6 @@
 
 use std::collections::HashSet;
 
-use en16931_formats::zugferd::{self, Divergence};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use super::loader::{PdfLoadError, load_bounded_document};
@@ -11,8 +10,7 @@ use super::{
     ExtractedPdfXml, MAX_TREE_DEPTH, MAX_TREE_OBJECTS, PdfBudget, PdfExtractError,
     PdfStreamDecodeError, deref_key, fail_clause_hint, obj_loc,
 };
-use crate::stage_acc::StageAcc;
-use crate::types::Locale;
+use crate::stage_acc::{StageAcc, tr_fmt};
 
 /// Priority order of standard hybrid e-invoice attachment filenames.
 const PRIMARY_INVOICE_FILENAMES: &[&str] = &[
@@ -75,7 +73,6 @@ struct ExtractedDocInvoice {
 }
 
 pub(super) fn check_associated_files_and_extract(
-    pdf_bytes: &[u8],
     doc: &Document,
     catalog: &Dictionary,
     xmp_doc_filename: Option<&str>,
@@ -127,11 +124,10 @@ pub(super) fn check_associated_files_and_extract(
         has_inline_af,
         xmp_doc_filename,
     };
-    inspect_extracted_invoice(pdf_bytes, doc, catalog, &ctx, budget, acc)
+    inspect_extracted_invoice(doc, catalog, &ctx, budget, acc)
 }
 
 fn inspect_extracted_invoice(
-    pdf_bytes: &[u8],
     doc: &Document,
     catalog: &Dictionary,
     ctx: &AfAssociationCtx<'_>,
@@ -141,7 +137,7 @@ fn inspect_extracted_invoice(
     let found = match extract_invoice_from_doc(doc, catalog, budget) {
         Ok(Some(f)) => f,
         Ok(None) => {
-            emit_missing_invoice_payload(None, None, acc);
+            emit_missing_invoice_payload(None, acc);
             return None;
         }
         Err(PdfStreamDecodeError::LimitExceeded) => {
@@ -155,10 +151,11 @@ fn inspect_extracted_invoice(
             return None;
         }
         Err(PdfStreamDecodeError::Corrupt(reason)) => {
-            let msg = match acc.locale() {
-                Locale::En => format!("Embedded XML stream failed to decode: {reason}"),
-                Locale::Ro => format!("Fluxul XML încorporat nu a putut fi decodat: {reason}"),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "Embedded XML stream failed to decode: {reason}",
+                "Fluxul XML încorporat nu a putut fi decodat: {reason}"
+            );
             acc.fatal_clause(
                 "PDFA3-6.8-NO-INVOICE-PAYLOAD",
                 "ISO 19005-3:6.8",
@@ -170,12 +167,15 @@ fn inspect_extracted_invoice(
     };
 
     let fname = &found.payload.filename;
-    if fname.eq_ignore_ascii_case("efactura.xml") {
+    if PRIMARY_INVOICE_FILENAMES
+        .iter()
+        .any(|f| fname.eq_ignore_ascii_case(f))
+    {
         let is_associated = !ctx.has_af
             || found
                 .filespec_id
                 .map_or(ctx.has_inline_af, |id| ctx.af_ids.contains(&id));
-        verify_efactura_association(
+        verify_hybrid_association(
             fname,
             is_associated,
             found.in_embedded_files,
@@ -186,48 +186,11 @@ fn inspect_extracted_invoice(
         return Some(found.payload);
     }
 
-    if zugferd::FILENAMES
-        .iter()
-        .any(|f| fname.eq_ignore_ascii_case(f))
-    {
-        match zugferd::extract(pdf_bytes, &zugferd::Limits::default()) {
-            Ok(extracted) => record_zugferd_divergences(&extracted, acc),
-            Err(err) => emit_missing_invoice_payload(Some(fname), Some(&err), acc),
-        }
-        return Some(found.payload);
-    }
-
-    emit_missing_invoice_payload(Some(fname), None, acc);
+    emit_missing_invoice_payload(Some(fname), acc);
     Some(found.payload)
 }
 
-fn record_zugferd_divergences(extracted: &zugferd::Extracted, acc: &mut StageAcc) {
-    if extracted.divergence.is_empty() {
-        acc.pass();
-        return;
-    }
-    let loc = format!("EmbeddedFile ({})", extracted.filename);
-    for div in &extracted.divergence {
-        let msg = format_divergence(div, acc.locale());
-        match div {
-            Divergence::Profile { .. }
-            | Divergence::Filename { .. }
-            | Divergence::Relationship { .. }
-            | Divergence::NoXmp
-            | Divergence::NotAssociated
-            | Divergence::NotInEmbeddedFiles
-            | Divergence::NoRelationship
-            | Divergence::NotPdfA3 { .. } => {
-                acc.fatal_clause("PDFA3-6.8-HYBRID-DIVERGENCE", "ISO 19005-3:6.8", &loc, msg);
-            }
-            _ => {
-                acc.warn_clause("PDFA3-6.8-HYBRID-NOTICE", "ISO 19005-3:6.8", &loc, msg);
-            }
-        }
-    }
-}
-
-fn verify_efactura_association(
+fn verify_hybrid_association(
     filename: &str,
     is_associated: bool,
     in_embedded_files: bool,
@@ -240,53 +203,41 @@ fn verify_efactura_association(
 
     if !is_associated {
         clean = false;
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Embedded invoice '{filename}' is not referenced in the Document Catalog /AF array."
-            ),
-            Locale::Ro => format!(
-                "Factura încorporată '{filename}' nu este referențiată în vectorul /AF din Catalogul PDF."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Embedded invoice '{filename}' is not referenced in the Document Catalog /AF array.",
+            "Factura încorporată '{filename}' nu este referențiată în vectorul /AF din Catalogul PDF."
+        );
         acc.fatal_clause("PDFA3-6.8-HYBRID-DIVERGENCE", "ISO 19005-3:6.8", &loc, msg);
     }
 
     if !in_embedded_files {
         clean = false;
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Embedded invoice '{filename}' is not reachable via Catalog /Names/EmbeddedFiles."
-            ),
-            Locale::Ro => format!(
-                "Factura încorporată '{filename}' nu este accesibilă prin arborele /Names/EmbeddedFiles din Catalogul PDF."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Embedded invoice '{filename}' is not reachable via Catalog /Names/EmbeddedFiles.",
+            "Factura încorporată '{filename}' nu este accesibilă prin arborele /Names/EmbeddedFiles din Catalogul PDF."
+        );
         acc.fatal_clause("PDFA3-6.8-HYBRID-DIVERGENCE", "ISO 19005-3:6.8", &loc, msg);
     }
 
     if !has_relationship {
         clean = false;
-        let msg = match acc.locale() {
-            Locale::En => {
-                format!("Filespec dictionary for '{filename}' carries no /AFRelationship entry.")
-            }
-            Locale::Ro => format!(
-                "Dicționarul Filespec pentru '{filename}' nu conține intrarea /AFRelationship."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Filespec dictionary for '{filename}' carries no /AFRelationship entry.",
+            "Dicționarul Filespec pentru '{filename}' nu conține intrarea /AFRelationship."
+        );
         acc.fatal_clause("PDFA3-6.8-HYBRID-DIVERGENCE", "ISO 19005-3:6.8", &loc, msg);
     }
 
     if let Some(xmp_f) = xmp_doc_filename.filter(|x| !x.eq_ignore_ascii_case(filename)) {
         clean = false;
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "XMP fx:DocumentFileName declares '{xmp_f}', but associated invoice attachment is '{filename}'."
-            ),
-            Locale::Ro => format!(
-                "Metadatele XMP fx:DocumentFileName declară '{xmp_f}', dar fișierul atașat este '{filename}'."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "XMP fx:DocumentFileName declares '{xmp_f}', but associated invoice attachment is '{filename}'.",
+            "Metadatele XMP fx:DocumentFileName declară '{xmp_f}', dar fișierul atașat este '{filename}'."
+        );
         acc.fatal_clause("PDFA3-6.8-HYBRID-DIVERGENCE", "ISO 19005-3:6.8", &loc, msg);
     }
 
@@ -295,29 +246,23 @@ fn verify_efactura_association(
     }
 }
 
-fn emit_missing_invoice_payload(
-    found_name: Option<&str>,
-    zugferd_err: Option<&zugferd::Error>,
-    acc: &mut StageAcc,
-) {
-    let msg = match (found_name, zugferd_err, acc.locale()) {
-        (_, Some(err), Locale::En) => format!("Hybrid PDF invoice extraction failed: {err}"),
-        (_, Some(err), Locale::Ro) => {
-            format!("Extragerea facturii XML din PDF-ul hibrid a eșuat: {err}")
-        }
-        (Some(name), None, Locale::En) => format!(
-            "Embedded XML file '{name}' does not use a recognized hybrid invoice filename (efactura.xml, factur-x.xml, zugferd-invoice.xml, or xrechnung.xml)."
-        ),
-        (Some(name), None, Locale::Ro) => format!(
-            "Fișierul XML atașat '{name}' nu are un nume standard de factură hibridă (efactura.xml, factur-x.xml, zugferd-invoice.xml sau xrechnung.xml)."
-        ),
-        (None, None, Locale::En) => {
-            "PDF container carries no embedded XML invoice attachment.".to_owned()
-        }
-        (None, None, Locale::Ro) => {
-            "Containerul PDF nu conține nicio factură electronică XML încorporată.".to_owned()
-        }
-    };
+fn emit_missing_invoice_payload(found_name: Option<&str>, acc: &mut StageAcc) {
+    let msg = found_name.map_or_else(
+        || {
+            acc.tr(
+                "PDF container carries no embedded XML invoice attachment.",
+                "Containerul PDF nu conține nicio factură electronică XML încorporată.",
+            )
+            .to_owned()
+        },
+        |name| {
+            tr_fmt!(
+                acc,
+                "Embedded XML file '{name}' does not use a recognized hybrid invoice filename (efactura.xml, factur-x.xml, zugferd-invoice.xml, or xrechnung.xml).",
+                "Fișierul XML atașat '{name}' nu are un nume standard de factură hibridă (efactura.xml, factur-x.xml, zugferd-invoice.xml sau xrechnung.xml)."
+            )
+        },
+    );
     fail_clause_hint(
         acc,
         "PDFA3-6.8-NO-INVOICE-PAYLOAD",
@@ -327,46 +272,6 @@ fn emit_missing_invoice_payload(
         "Attach the XML invoice as efactura.xml, factur-x.xml, zugferd-invoice.xml, or xrechnung.xml.",
         "Atașați factura XML cu numele efactura.xml, factur-x.xml, zugferd-invoice.xml sau xrechnung.xml.",
     );
-}
-
-fn format_divergence(div: &Divergence, locale: Locale) -> String {
-    if locale == Locale::En {
-        return div.to_string();
-    }
-    match div {
-        Divergence::Profile { xmp, payload } => format!(
-            "Metadatele XMP ale PDF-ului declară profilul '{xmp}', dar identificatorul BT-24 din XML este '{payload}'."
-        ),
-        Divergence::Filename { xmp, actual } => format!(
-            "Metadatele XMP declară numele fișierului atașat '{xmp}', dar atașamentul găsit este '{actual}'."
-        ),
-        Divergence::Relationship { found, profile } => format!(
-            "Factura este atașată cu /AFRelationship /{found}, incompatibil cu profilul {profile:?} (utilizați /Alternative sau /Source)."
-        ),
-        Divergence::NoXmp => {
-            "Documentul PDF nu conține metadate XMP pentru factura electronică încorporată."
-                .to_owned()
-        }
-        Divergence::NotAssociated => {
-            "Factura XML nu este referențiată în vectorul /AF din Catalogul PDF (nu este declarată ca fișier asociat PDF/A-3)."
-                .to_owned()
-        }
-        Divergence::NotInEmbeddedFiles => {
-            "Factura XML nu este accesibilă prin arborele /Names/EmbeddedFiles din Catalogul PDF."
-                .to_owned()
-        }
-        Divergence::NoRelationship => {
-            "Dicționarul Filespec al facturii XML nu conține intrarea obligatorie /AFRelationship."
-                .to_owned()
-        }
-        Divergence::NotPdfA3 { part: Some(p) } => format!(
-            "Documentul PDF declară conformitate PDF/A-{p}; facturile hibride necesită PDF/A-3 (pdfaid:part=3)."
-        ),
-        Divergence::NotPdfA3 { part: None } => {
-            "Documentul PDF nu declară conformitatea PDF/A-3 în metadatele XMP.".to_owned()
-        }
-        _ => div.to_string(),
-    }
 }
 
 struct EmbeddedCandidate<'a> {
@@ -585,14 +490,11 @@ fn check_filespec_mime_and_relationship(doc: &Document, af_arr: &[Object], acc: 
             }
             Ok(other) => {
                 let s = String::from_utf8_lossy(other).into_owned();
-                let msg = match acc.locale() {
-                    Locale::En => {
-                        format!("Filespec /AFRelationship '/{s}' is not valid in ISO 19005-3.")
-                    }
-                    Locale::Ro => format!(
-                        "Valoarea /AFRelationship '/{s}' din Filespec nu este permisă de ISO 19005-3."
-                    ),
-                };
+                let msg = tr_fmt!(
+                    acc,
+                    "Filespec /AFRelationship '/{s}' is not valid in ISO 19005-3.",
+                    "Valoarea /AFRelationship '/{s}' din Filespec nu este permisă de ISO 19005-3."
+                );
                 acc.fatal_clause(
                     "PDFA3-6.8-AFRELATIONSHIP-INVALID",
                     "ISO 19005-3:6.8",
@@ -621,14 +523,11 @@ fn check_filespec_mime_and_relationship(doc: &Document, af_arr: &[Object], acc: 
                     Ok(other) if !other.is_empty() && is_non_xml_supplement => acc.pass(),
                     Ok(other) => {
                         let s = String::from_utf8_lossy(other).into_owned();
-                        let msg = match acc.locale() {
-                            Locale::En => {
-                                format!("Embedded file stream /Subtype is '{s}'; recommended 'text/xml'.")
-                            }
-                            Locale::Ro => {
-                                format!("Subtipul MIME /Subtype este '{s}'; se recomandă 'text/xml'.")
-                            }
-                        };
+                        let msg = tr_fmt!(
+                            acc,
+                            "Embedded file stream /Subtype is '{s}'; recommended 'text/xml'.",
+                            "Subtipul MIME /Subtype este '{s}'; se recomandă 'text/xml'."
+                        );
                         acc.warn_clause("PDFA3-6.8-MIME-SUBTYPE", "ISO 19005-3:6.8", ef_loc, msg);
                     }
                     Err(_) => acc.fail_clause(

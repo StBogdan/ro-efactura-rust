@@ -5,8 +5,7 @@ use std::collections::HashSet;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 use super::{PdfBudget, PdfStreamDecodeError, deref_key, fail_clause_hint, obj_loc};
-use crate::stage_acc::StageAcc;
-use crate::types::Locale;
+use crate::stage_acc::{StageAcc, tr_fmt};
 
 pub(super) fn check_embedded_fonts(doc: &Document, budget: &mut PdfBudget, acc: &mut StageAcc) {
     let mut visited: HashSet<ObjectId> = HashSet::new();
@@ -71,14 +70,11 @@ fn inspect_single_font(
                 }
             }
         } else {
-            let msg = match acc.locale() {
-                Locale::En => {
-                    format!("Type0 composite font /{base_font} has no /DescendantFonts array.")
-                }
-                Locale::Ro => format!(
-                    "Fontul compozit Type0 /{base_font} nu conține vectorul /DescendantFonts."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "Type0 composite font /{base_font} has no /DescendantFonts array.",
+                "Fontul compozit Type0 /{base_font} nu conține vectorul /DescendantFonts."
+            );
             acc.fatal_clause(
                 "PDFA3-6.2.11-TYPE0-DESCENDANT",
                 "ISO 19005-3:6.2.11.4",
@@ -102,14 +98,11 @@ fn verify_font_descriptor(
     let fallback = format!("Font /{base_font}");
     let loc = obj_loc(obj_id, &fallback, &fallback);
     let Some((_, Object::Dictionary(fd))) = deref_key(doc, font_dict, b"FontDescriptor") else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Font /{base_font} has no /FontDescriptor and its glyph program is not embedded; ISO 19005-3 requires embedding every used font."
-            ),
-            Locale::Ro => format!(
-                "Fontul /{base_font} nu are /FontDescriptor și nu este încorporat; ISO 19005-3 impune încorporarea tuturor fonturilor utilizate."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Font /{base_font} has no /FontDescriptor and its glyph program is not embedded; ISO 19005-3 requires embedding every used font.",
+            "Fontul /{base_font} nu are /FontDescriptor și nu este încorporat; ISO 19005-3 impune încorporarea tuturor fonturilor utilizate."
+        );
         fail_clause_hint(
             acc,
             "PDFA3-6.2.11-FONT-NOT-EMBEDDED",
@@ -129,14 +122,11 @@ fn verify_font_descriptor(
             _ => None,
         });
     let Some((key, sid, stream)) = entry else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "FontDescriptor for /{base_font} contains none of /FontFile, /FontFile2, or /FontFile3."
-            ),
-            Locale::Ro => format!(
-                "FontDescriptor pentru /{base_font} nu conține /FontFile, /FontFile2 sau /FontFile3."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "FontDescriptor for /{base_font} contains none of /FontFile, /FontFile2, or /FontFile3.",
+            "FontDescriptor pentru /{base_font} nu conține /FontFile, /FontFile2 sau /FontFile3."
+        );
         acc.fatal_clause(
             "PDFA3-6.2.11-FONTFILE-MISSING",
             "ISO 19005-3:6.2.11.4",
@@ -161,14 +151,11 @@ fn verify_embedded_font_stream(
     let font_bytes = match budget.decode_stream(stream) {
         Ok(b) => b,
         Err(PdfStreamDecodeError::LimitExceeded) => {
-            let msg = match acc.locale() {
-                Locale::En => format!(
-                    "Embedded font stream for /{base_font} exceeded decompression safety budget."
-                ),
-                Locale::Ro => format!(
-                    "Fluxul fontului încorporat /{base_font} a depășit limita de memorie la decomprimare."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "Embedded font stream for /{base_font} exceeded decompression safety budget.",
+                "Fluxul fontului încorporat /{base_font} a depășit limita de memorie la decomprimare."
+            );
             acc.fatal_clause(
                 "PDFA3-6.1-RESOURCE-LIMIT",
                 "ISO 19005-3:6.2.11.4",
@@ -178,14 +165,11 @@ fn verify_embedded_font_stream(
             return;
         }
         Err(PdfStreamDecodeError::Corrupt(_)) => {
-            let msg = match acc.locale() {
-                Locale::En => {
-                    format!("Embedded font stream for /{base_font} could not be decompressed.")
-                }
-                Locale::Ro => {
-                    format!("Fluxul fontului încorporat /{base_font} nu a putut fi decomprimat.")
-                }
-            };
+            let msg = tr_fmt!(
+                acc,
+                "Embedded font stream for /{base_font} could not be decompressed.",
+                "Fluxul fontului încorporat /{base_font} nu a putut fi decomprimat."
+            );
             acc.fatal_clause(
                 "PDFA3-6.2.11-FONTFILE-DECODE",
                 "ISO 19005-3:6.2.11.4",
@@ -196,10 +180,11 @@ fn verify_embedded_font_stream(
         }
     };
     if font_bytes.is_empty() {
-        let msg = match acc.locale() {
-            Locale::En => format!("Embedded font stream for /{base_font} is empty (0 bytes)."),
-            Locale::Ro => format!("Fluxul fontului încorporat /{base_font} este gol (0 octeți)."),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Embedded font stream for /{base_font} is empty (0 bytes).",
+            "Fluxul fontului încorporat /{base_font} este gol (0 octeți)."
+        );
         acc.fatal_clause(
             "PDFA3-6.2.11-FONTFILE-EMPTY",
             "ISO 19005-3:6.2.11.4",
@@ -220,14 +205,11 @@ fn verify_embedded_font_stream(
         match ttf_parser::Face::parse(&font_bytes, 0) {
             Ok(f) if f.number_of_glyphs() > 0 => acc.pass(),
             Ok(_) => {
-                let msg = match acc.locale() {
-                    Locale::En => {
-                        format!("Embedded TrueType/OpenType font /{base_font} contains 0 glyphs.")
-                    }
-                    Locale::Ro => {
-                        format!("Fontul TrueType/OpenType /{base_font} conține 0 glife.")
-                    }
-                };
+                let msg = tr_fmt!(
+                    acc,
+                    "Embedded TrueType/OpenType font /{base_font} contains 0 glyphs.",
+                    "Fontul TrueType/OpenType /{base_font} conține 0 glife."
+                );
                 acc.fatal_clause(
                     "PDFA3-6.2.11-FONT-ZERO-GLYPHS",
                     "ISO 19005-3:6.2.11.4",
@@ -236,14 +218,11 @@ fn verify_embedded_font_stream(
                 );
             }
             Err(err) => {
-                let msg = match acc.locale() {
-                    Locale::En => format!(
-                        "Embedded TrueType/OpenType font /{base_font} failed SFNT parsing: {err}"
-                    ),
-                    Locale::Ro => {
-                        format!("Fontul TrueType/OpenType /{base_font} este corupt SFNT: {err}")
-                    }
-                };
+                let msg = tr_fmt!(
+                    acc,
+                    "Embedded TrueType/OpenType font /{base_font} failed SFNT parsing: {err}",
+                    "Fontul TrueType/OpenType /{base_font} este corupt SFNT: {err}"
+                );
                 acc.fatal_clause(
                     "PDFA3-6.2.11-FONT-CORRUPT",
                     "ISO 19005-3:6.2.11.4",

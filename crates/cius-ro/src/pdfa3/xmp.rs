@@ -4,8 +4,7 @@
 use lopdf::{Dictionary, Document, Object};
 
 use super::{PdfBudget, PdfStreamDecodeError, deref_key, obj_loc};
-use crate::stage_acc::StageAcc;
-use crate::types::Locale;
+use crate::stage_acc::{StageAcc, tr_fmt};
 
 const PDFAID_NS: &str = "http://www.aiim.org/pdfa/ns/id/";
 const PDFA_EXT_NS: &str = "http://www.aiim.org/pdfa/ns/extension/";
@@ -51,14 +50,11 @@ pub(super) fn check_xmp_metadata(
     match props.part.as_deref() {
         Some("3") => acc.pass(),
         Some(other) => {
-            let msg = match acc.locale() {
-                Locale::En => format!(
-                    "XMP pdfaid:part is '{other}', expected '3' for PDF/A-3 hybrid e-invoices."
-                ),
-                Locale::Ro => format!(
-                    "Proprietatea XMP pdfaid:part este '{other}', dar pentru PDF/A-3 trebuie să fie '3'."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "XMP pdfaid:part is '{other}', expected '3' for PDF/A-3 hybrid e-invoices.",
+                "Proprietatea XMP pdfaid:part este '{other}', dar pentru PDF/A-3 trebuie să fie '3'."
+            );
             acc.fatal_clause("PDFA3-6.6.4-PDFAID-PART", "ISO 19005-3:6.6.4", &loc, msg);
         }
         None => acc.fail_clause(
@@ -73,16 +69,11 @@ pub(super) fn check_xmp_metadata(
     match props.conf.as_deref() {
         Some("A" | "B" | "U") => acc.pass(),
         Some(other) => {
-            let msg = match acc.locale() {
-                Locale::En => {
-                    format!(
-                        "XMP pdfaid:conformance '{other}' is invalid; must be 'A', 'B', or 'U'."
-                    )
-                }
-                Locale::Ro => format!(
-                    "Valoarea XMP pdfaid:conformance '{other}' este invalidă; permis: 'A', 'B' sau 'U'."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "XMP pdfaid:conformance '{other}' is invalid; must be 'A', 'B', or 'U'.",
+                "Valoarea XMP pdfaid:conformance '{other}' este invalidă; permis: 'A', 'B' sau 'U'."
+            );
             acc.fatal_clause(
                 "PDFA3-6.6.4-PDFAID-CONFORMANCE",
                 "ISO 19005-3:6.6.4",

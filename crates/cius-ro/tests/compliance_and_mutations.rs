@@ -1763,11 +1763,29 @@ fn pdfa3_single_stream_extraction_skips_unrelated_attachments_and_guards_xref() 
     assert_eq!(ext.filename, "efactura.xml");
     assert!(std::str::from_utf8(&ext.xml_bytes).is_ok_and(|s| s.contains("RO-2026-0042")));
 
-    // 2. Malicious XRef stream dictionary with /W [99 99 99] /Size 999999999 must be rejected pre-load
+    // 2. Malicious XRef stream dictionaries (both missing startxref AND real startxref-linked
+    //    /W [99 99 99] and zero-width /W [0 0 0] /Size 999999999 bombs) must be rejected pre-load!
     let bad_xref_pdf =
         b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n1 0 obj\n<< /Type /XRef /W [99 99 99] /Size 999999999 >>\nstream\nendstream\n%%EOF";
     assert!(extract_xml_from_pdf(bad_xref_pdf).is_err());
     assert_has_code(bad_xref_pdf, "PDFA3-6.1-PARSE");
+
+    for xref_dict in [
+        "<< /Type /XRef /Length 0 /W [999999999 99 99] /Size 999999999 >>",
+        "<< /Type /XRef /Length 0 /W [0 0 0] /Size 999999999 >>",
+    ] {
+        let prefix = b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n";
+        let xref_offset = prefix.len();
+        let mut linked_bomb = prefix.to_vec();
+        linked_bomb.extend_from_slice(
+            format!(
+                "1 0 obj\n{xref_dict}\nstream\nendstream\nendobj\nstartxref\n{xref_offset}\n%%EOF"
+            )
+            .as_bytes(),
+        );
+        assert!(extract_xml_from_pdf(&linked_bomb).is_err());
+        assert_has_code(&linked_bomb, "PDFA3-6.1-PARSE");
+    }
 
     // 3. Zero-allocation LocalizedDisplay matches .message() on both XmlDecodeError and PdfExtractError
     let xml_err = cius_ro::decode_xml_bytes(&[0xFF, 0xFE, 0x00]).unwrap_err();
@@ -1780,6 +1798,88 @@ fn pdfa3_single_stream_extraction_skips_unrelated_attachments_and_guards_xref() 
         pdf_err.display(Locale::Ro).to_string(),
         pdf_err.message(Locale::Ro)
     );
+}
+
+#[cfg(feature = "pdfa3")]
+#[test]
+fn pdfa3_single_pass_objstm_and_facturx_hybrid_association() {
+    let base_pdf = load_fixture_bytes("01_standard_b2b_ro.pdf");
+
+    // 1. Single-pass /ObjStm + /XRef stream container (PDF 1.5+ modern save) must unpack
+    //    compressed dictionaries cleanly and pass full PDF/A-3 + CIUS-RO validation
+    let mut modern_doc = Document::load_mem(&base_pdf).expect("parse base PDF for modern save");
+    let mut modern_pdf = Vec::new();
+    modern_doc
+        .save_modern(&mut modern_pdf)
+        .expect("save PDF with /ObjStm and /XRef streams");
+    let modern_ext = extract_xml_from_pdf(&modern_pdf).expect("extract from /ObjStm PDF");
+    assert_eq!(modern_ext.filename, "efactura.xml");
+    let modern_rep = validate_bytes(&modern_pdf, &ValidateOptions::default().deny_warnings(true));
+    assert!(
+        modern_rep.is_valid && modern_rep.violations.is_empty(),
+        "Single-pass /ObjStm PDF/A-3 validation must pass cleanly: {:?}",
+        modern_rep.violations
+    );
+
+    // 2. Hybrid factur-x.xml attachment association & XMP fx:DocumentFileName divergence check
+    let mut fx_doc = Document::load_mem(&base_pdf).expect("parse base PDF for factur-x.xml");
+    for obj in fx_doc.objects.values_mut() {
+        match obj {
+            Object::Dictionary(d) => {
+                if d.get(b"F")
+                    .and_then(Object::as_str)
+                    .is_ok_and(|s| s == b"efactura.xml")
+                {
+                    d.set("F", Object::string_literal("factur-x.xml"));
+                    d.set("UF", Object::string_literal("factur-x.xml"));
+                }
+                if let Ok(Object::Array(names)) = d.get_mut(b"Names")
+                    && names
+                        .first()
+                        .is_some_and(|o| o.as_str().is_ok_and(|s| s == b"efactura.xml"))
+                {
+                    names[0] = Object::string_literal("factur-x.xml");
+                }
+            }
+            Object::Stream(s) => {
+                if s.dict
+                    .get(b"Subtype")
+                    .and_then(Object::as_name)
+                    .is_ok_and(|n| n == b"XML")
+                    && let Ok(xmp_str) = std::str::from_utf8(&s.content)
+                {
+                    s.set_content(xmp_str.replace("efactura.xml", "factur-x.xml").into_bytes());
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut fx_pdf = Vec::new();
+    fx_doc.save_to(&mut fx_pdf).expect("save factur-x.xml PDF");
+    let fx_rep = validate_bytes(&fx_pdf, &ValidateOptions::default().deny_warnings(true));
+    assert!(
+        fx_rep.is_valid && fx_rep.violations.is_empty(),
+        "Compliant factur-x.xml hybrid PDF/A-3 must pass without zugferd re-parse: {:?}",
+        fx_rep.violations
+    );
+
+    // Mismatched XMP fx:DocumentFileName ('efactura.xml') vs attachment ('factur-x.xml') -> PDFA3-6.8-HYBRID-DIVERGENCE
+    for obj in fx_doc.objects.values_mut() {
+        if let Object::Stream(s) = obj
+            && s.dict
+                .get(b"Subtype")
+                .and_then(Object::as_name)
+                .is_ok_and(|n| n == b"XML")
+            && let Ok(xmp_str) = std::str::from_utf8(&s.content)
+        {
+            s.set_content(xmp_str.replace("factur-x.xml", "efactura.xml").into_bytes());
+        }
+    }
+    let mut fx_mismatch_pdf = Vec::new();
+    fx_doc
+        .save_to(&mut fx_mismatch_pdf)
+        .expect("save mismatched factur-x PDF");
+    assert_has_code(&fx_mismatch_pdf, "PDFA3-6.8-HYBRID-DIVERGENCE");
 }
 
 #[cfg(feature = "xsd")]

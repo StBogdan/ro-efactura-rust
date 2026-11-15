@@ -3,8 +3,7 @@
 use lopdf::{Dictionary, Document, Object, Stream};
 
 use super::{PdfBudget, PdfStreamDecodeError, deref_key, fail_clause_hint, obj_loc};
-use crate::stage_acc::StageAcc;
-use crate::types::Locale;
+use crate::stage_acc::{StageAcc, tr_fmt};
 
 pub(super) fn check_output_intents(
     doc: &Document,
@@ -122,18 +121,11 @@ fn validate_icc_stream(stream: &Stream, loc: &str, budget: &mut PdfBudget, acc: 
     }
     let major = bytes[8];
     if major > 4 {
-        let msg = match acc.locale() {
-            Locale::En => {
-                format!(
-                    "ICC profile version {major}.x exceeds maximum ICC v4 allowed by ISO 19005-3."
-                )
-            }
-            Locale::Ro => {
-                format!(
-                    "Versiunea profilului ICC {major}.x depășește versiunea maximă v4 permisă de ISO 19005-3."
-                )
-            }
-        };
+        let msg = tr_fmt!(
+            acc,
+            "ICC profile version {major}.x exceeds maximum ICC v4 allowed by ISO 19005-3.",
+            "Versiunea profilului ICC {major}.x depășește versiunea maximă v4 permisă de ISO 19005-3."
+        );
         acc.fatal_clause("PDFA3-6.2.3-ICC-VERSION", "ISO 19005-3:6.2.3", loc, msg);
         return;
     }
@@ -155,25 +147,19 @@ fn validate_icc_stream(stream: &Stream, loc: &str, budget: &mut PdfBudget, acc: 
     match stream.dict.get(b"N").and_then(Object::as_i64) {
         Ok(n) if n == expected_n => acc.pass(),
         Ok(n) => {
-            let msg = match acc.locale() {
-                Locale::En => {
-                    format!("/DestOutputProfile declares /N {n}, expected /N {expected_n}.")
-                }
-                Locale::Ro => format!(
-                    "/DestOutputProfile declară /N {n}, dar spațiul de culoare impune /N {expected_n}."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "/DestOutputProfile declares /N {n}, expected /N {expected_n}.",
+                "/DestOutputProfile declară /N {n}, dar spațiul de culoare impune /N {expected_n}."
+            );
             acc.fatal_clause("PDFA3-6.2.3-ICC-COMPONENTS", "ISO 19005-3:6.2.3", loc, msg);
         }
         Err(_) => {
-            let msg = match acc.locale() {
-                Locale::En => format!(
-                    "/DestOutputProfile is missing required /N {expected_n} color component count."
-                ),
-                Locale::Ro => format!(
-                    "/DestOutputProfile nu conține numărul obligatoriu de componente /N {expected_n}."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "/DestOutputProfile is missing required /N {expected_n} color component count.",
+                "/DestOutputProfile nu conține numărul obligatoriu de componente /N {expected_n}."
+            );
             acc.fatal_clause("PDFA3-6.2.3-ICC-N-MISSING", "ISO 19005-3:6.2.3", loc, msg);
         }
     }
