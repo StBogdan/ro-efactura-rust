@@ -21,7 +21,7 @@ pub const CNP_WEIGHTS: [u32; 12] = [2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9];
 /// Returns `true` if `raw` (ignoring surrounding whitespace) equals [`ANAF_B2C_PLACEHOLDER`] (`"0000000000000"`).
 #[must_use]
 pub fn is_anaf_b2c_placeholder(raw: &str) -> bool {
-    raw.trim() == ANAF_B2C_PLACEHOLDER
+    raw.len() <= crate::MAX_ID_SCAN_CHARS && raw.trim() == ANAF_B2C_PLACEHOLDER
 }
 
 /// Sex and birth-century classification encoded by the first digit (`S`) of a Romanian [`Cnp`].
@@ -188,7 +188,8 @@ impl_localized_error!(CnpError);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cnp {
-    digits: [u8; 13],
+    digits: crate::AsciiDigits<13>,
+    sex_century: CnpSexCentury,
 }
 
 #[cfg(feature = "serde")]
@@ -205,18 +206,41 @@ impl Cnp {
     /// Returns [`CnpError`] if the input is the B2C placeholder, contains non-digits, is not 13 digits long,
     /// or fails sex-digit, calendar-date, county-code, sequence, or modulo-11 verification.
     pub fn parse(raw: &str) -> Result<Self, CnpError> {
+        if raw.len() > crate::MAX_ID_SCAN_CHARS {
+            let cap = crate::clamp_char_boundary(raw, crate::MAX_ID_SCAN_CHARS);
+            let head = raw[..cap].trim_start();
+            let mut count = 0usize;
+            for ch in head.chars().take(14) {
+                if !ch.is_ascii_digit() {
+                    return Err(CnpError::InvalidCharacters);
+                }
+                count += 1;
+            }
+            let reported = if count == 13 { 14 } else { count };
+            return Err(CnpError::InvalidLength { len: reported });
+        }
+
         let trimmed = raw.trim();
         if trimmed == ANAF_B2C_PLACEHOLDER {
             return Err(CnpError::AnafB2cPlaceholder);
         }
-        if !trimmed.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(CnpError::InvalidCharacters);
+        let mut digits = [0u8; 13];
+        let mut len = 0usize;
+        for ch in trimmed.chars() {
+            if !ch.is_ascii_digit() {
+                return Err(CnpError::InvalidCharacters);
+            }
+            if len == digits.len() {
+                return Err(CnpError::InvalidLength {
+                    len: digits.len() + 1,
+                });
+            }
+            digits[len] = ch as u8;
+            len += 1;
         }
-        let Ok(digits): Result<[u8; 13], _> = trimmed.as_bytes().try_into() else {
-            return Err(CnpError::InvalidLength {
-                len: trimmed.chars().count(),
-            });
-        };
+        if len != digits.len() {
+            return Err(CnpError::InvalidLength { len });
+        }
 
         let s = digits[0] - b'0';
         let Some(sex_century) = CnpSexCentury::from_digit(s) else {
@@ -240,35 +264,36 @@ impl Cnp {
             return Err(CnpError::InvalidSequence);
         }
 
-        let expected = compute_cnp_check_digit(&trimmed[..12])?;
+        let expected = compute_cnp_check_digit_unchecked(&digits[..12]);
         let actual = digits[12] - b'0';
         if actual != expected {
             return Err(CnpError::InvalidChecksum { expected, actual });
         }
 
-        Ok(Self { digits })
+        Ok(Self {
+            digits: crate::AsciiDigits::new(digits),
+            sex_century,
+        })
     }
 
     /// Returns the 13-digit string representation.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.digits).unwrap_or_default()
+        self.digits.as_str()
     }
 
     /// Returns the sex and birth-century classification (`S`, digit 1).
     #[must_use]
     pub const fn sex_century(&self) -> CnpSexCentury {
-        match CnpSexCentury::from_digit(self.digits[0] - b'0') {
-            Some(sc) => sc,
-            None => CnpSexCentury::Male1900,
-        }
+        self.sex_century
     }
 
     /// Returns the exact 4-digit birth year for `S` in `1..=6`, or `None` when `S` is `7..=9`
     /// (foreign residents/non-residents whose century is not uniquely fixed by `S`).
     #[must_use]
     pub const fn birth_year(&self) -> Option<u16> {
-        let yy = ((self.digits[1] - b'0') * 10 + (self.digits[2] - b'0')) as u16;
+        let d = self.digits.bytes();
+        let yy = ((d[1] - b'0') * 10 + (d[2] - b'0')) as u16;
         match self.sex_century() {
             CnpSexCentury::Male1800 | CnpSexCentury::Female1800 => Some(1800 + yy),
             CnpSexCentury::Male1900 | CnpSexCentury::Female1900 => Some(1900 + yy),
@@ -282,33 +307,35 @@ impl Cnp {
     /// Returns the birth month (`1..=12`).
     #[must_use]
     pub const fn birth_month(&self) -> u8 {
-        (self.digits[3] - b'0') * 10 + (self.digits[4] - b'0')
+        let d = self.digits.bytes();
+        (d[3] - b'0') * 10 + (d[4] - b'0')
     }
 
     /// Returns the birth day of month (`1..=31`).
     #[must_use]
     pub const fn birth_day(&self) -> u8 {
-        (self.digits[5] - b'0') * 10 + (self.digits[6] - b'0')
+        let d = self.digits.bytes();
+        (d[5] - b'0') * 10 + (d[6] - b'0')
     }
 
     /// Returns the two-digit county/sector code (`01..=48`, `51`, `52`, or `70`).
     #[must_use]
     pub const fn county_code(&self) -> u8 {
-        (self.digits[7] - b'0') * 10 + (self.digits[8] - b'0')
+        let d = self.digits.bytes();
+        (d[7] - b'0') * 10 + (d[8] - b'0')
     }
 
     /// Returns the three-digit county daily serial number (`1..=999`, digits `10..=12`).
     #[must_use]
     pub const fn sequence(&self) -> u16 {
-        (self.digits[9] - b'0') as u16 * 100
-            + (self.digits[10] - b'0') as u16 * 10
-            + (self.digits[11] - b'0') as u16
+        let d = self.digits.bytes();
+        (d[9] - b'0') as u16 * 100 + (d[10] - b'0') as u16 * 10 + (d[11] - b'0') as u16
     }
 
     /// Returns the trailing modulo-11 control digit (`0..=9`).
     #[must_use]
     pub const fn check_digit(&self) -> u8 {
-        self.digits[12] - b'0'
+        self.digits.bytes()[12] - b'0'
     }
 }
 
@@ -401,13 +428,17 @@ pub fn compute_cnp_check_digit(first_twelve: &str) -> Result<u8, CnpError> {
             len: first_twelve.len() + 1,
         });
     }
+    Ok(compute_cnp_check_digit_unchecked(first_twelve.as_bytes()))
+}
+
+fn compute_cnp_check_digit_unchecked(first_twelve: &[u8]) -> u8 {
     let sum: u32 = first_twelve
-        .bytes()
+        .iter()
         .zip(CNP_WEIGHTS)
-        .map(|(b, w)| u32::from(b - b'0') * w)
+        .map(|(&b, w)| u32::from(b - b'0') * w)
         .sum();
     let rem = sum % 11;
-    Ok(if rem == 10 { 1 } else { rem as u8 })
+    if rem == 10 { 1 } else { rem as u8 }
 }
 
 fn is_valid_cnp_date(sex_century: CnpSexCentury, yy: u8, month: u8, day: u8) -> bool {

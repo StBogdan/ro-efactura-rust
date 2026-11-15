@@ -98,7 +98,7 @@ impl_localized_error!(CuiError);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cui {
-    digits: [u8; 10],
+    digits: crate::AsciiDigits<10>,
     len: u8,
     has_ro_prefix: bool,
 }
@@ -114,9 +114,16 @@ impl Cui {
     /// Returns [`CuiError`] if the input is empty, contains invalid characters, falls outside `2..=10` digits,
     /// starts with `'0'`, or fails the official modulo-11 control-digit check.
     pub fn parse(raw: &str) -> Result<Self, CuiError> {
-        let mut chars = raw.chars().filter(|c| !c.is_whitespace());
+        let mut chars = raw
+            .chars()
+            .take(crate::MAX_ID_SCAN_CHARS)
+            .filter(|c| !c.is_whitespace());
         let Some(c0) = chars.next() else {
-            return Err(CuiError::Empty);
+            return if raw.len() > crate::MAX_ID_SCAN_CHARS {
+                Err(CuiError::InvalidLength { len: 0 })
+            } else {
+                Err(CuiError::Empty)
+            };
         };
         let c1 = chars.next();
 
@@ -131,12 +138,26 @@ impl Cui {
             if !ch.is_ascii_digit() {
                 return Err(CuiError::InvalidCharacters);
             }
-            if count < digits.len() {
-                digits[count] = ch as u8;
+            if count == digits.len() {
+                return Err(CuiError::InvalidLength {
+                    len: digits.len() + 1,
+                });
             }
+            digits[count] = ch as u8;
             count += 1;
         }
 
+        if raw.len() > crate::MAX_ID_SCAN_CHARS {
+            return Err(CuiError::InvalidLength { len: count });
+        }
+        Self::from_validated_digits(digits, count, has_ro_prefix)
+    }
+
+    fn from_validated_digits(
+        digits: [u8; 10],
+        count: usize,
+        has_ro_prefix: bool,
+    ) -> Result<Self, CuiError> {
         if count == 0 {
             return Err(CuiError::Empty);
         }
@@ -147,15 +168,14 @@ impl Cui {
             return Err(CuiError::LeadingZero);
         }
 
-        let body_str = core::str::from_utf8(&digits[..count - 1]).unwrap_or_default();
         let actual = digits[count - 1] - b'0';
-        let expected = compute_cui_check_digit(body_str)?;
+        let expected = compute_cui_check_digit_unchecked(&digits[..count - 1]);
         if actual != expected {
             return Err(CuiError::InvalidChecksum { expected, actual });
         }
 
         Ok(Self {
-            digits,
+            digits: crate::AsciiDigits::new(digits),
             len,
             has_ro_prefix,
         })
@@ -164,17 +184,18 @@ impl Cui {
     /// Returns the validated numeric digits without any `RO` prefix (e.g. `"45678918"`).
     #[must_use]
     pub fn digits(&self) -> &str {
-        core::str::from_utf8(&self.digits[..usize::from(self.len)]).unwrap_or_default()
+        self.digits.prefix_str(usize::from(self.len))
     }
 
     /// Returns the numeric value of the `CUI`/`CIF` as `u64`.
     #[must_use]
     pub const fn number(&self) -> u64 {
+        let bytes = self.digits.bytes();
         let mut idx = 0usize;
         let end = self.len as usize;
         let mut val = 0u64;
         while idx < end {
-            val = val * 10 + (self.digits[idx] - b'0') as u64;
+            val = val * 10 + (bytes[idx] - b'0') as u64;
             idx += 1;
         }
         val
@@ -189,7 +210,7 @@ impl Cui {
     /// Returns the trailing modulo-11 check digit (`0..=9`).
     #[must_use]
     pub const fn check_digit(&self) -> u8 {
-        self.digits[(self.len - 1) as usize] - b'0'
+        self.digits.bytes()[(self.len - 1) as usize] - b'0'
     }
 
     /// Formats the identifier with the `RO` VAT prefix (e.g. `"RO45678918"`).
@@ -240,14 +261,18 @@ pub fn compute_cui_check_digit(body_digits: &str) -> Result<u8, CuiError> {
         return Err(CuiError::LeadingZero);
     }
 
+    Ok(compute_cui_check_digit_unchecked(body_digits.as_bytes()))
+}
+
+fn compute_cui_check_digit_unchecked(body_digits: &[u8]) -> u8 {
     let offset = CUI_WEIGHTS.len() - body_digits.len();
     let sum: u32 = body_digits
-        .bytes()
+        .iter()
         .zip(&CUI_WEIGHTS[offset..])
-        .map(|(b, w)| u32::from(b - b'0') * w)
+        .map(|(&b, &w)| u32::from(b - b'0') * w)
         .sum();
     let rem = (sum * 10) % 11;
-    Ok(if rem == 10 { 0 } else { rem as u8 })
+    if rem == 10 { 0 } else { rem as u8 }
 }
 
 /// Inspects `raw` as a potential `CUI`/`CIF` candidate inside an e-invoice field that might
@@ -257,28 +282,59 @@ pub fn compute_cui_check_digit(body_digits: &str) -> Result<u8, CuiError> {
 pub fn parse_cui_candidate(raw: &str) -> Option<Result<Cui, CuiError>> {
     let mut buf = [0u8; 25];
     let mut len = 0usize;
-    for ch in raw.chars().filter(|c| !c.is_whitespace()) {
+    let mut has_ro = false;
+    for ch in raw
+        .chars()
+        .take(crate::MAX_ID_SCAN_CHARS)
+        .filter(|c| !c.is_whitespace())
+    {
         if !ch.is_ascii() {
             return None;
         }
-        if len < buf.len() {
-            buf[len] = ch as u8;
+        let b = ch as u8;
+        if len == 2 {
+            has_ro = buf[0].eq_ignore_ascii_case(&b'R') && buf[1].eq_ignore_ascii_case(&b'O');
+            if has_ro && b == b'-' {
+                return None;
+            }
         }
+        if len >= 2 && !has_ro && (!b.is_ascii_digit() || len == 10) {
+            return None;
+        }
+        if len == buf.len() {
+            break;
+        }
+        buf[len] = b;
         len += 1;
     }
-    if len == 0 {
+    let is_ro =
+        len >= 2 && buf[0].eq_ignore_ascii_case(&b'R') && buf[1].eq_ignore_ascii_case(&b'O');
+    if len < 2 || (raw.len() > crate::MAX_ID_SCAN_CHARS && !is_ro) {
         return None;
     }
 
-    if len >= 2 && buf[0].eq_ignore_ascii_case(&b'R') && buf[1].eq_ignore_ascii_case(&b'O') {
-        if len > 2 && buf[2] == b'-' {
-            return None;
-        }
+    if is_ro {
         if len == 24 && !buf[2..24].iter().all(u8::is_ascii_digit) {
             return None;
         }
-        return Some(Cui::parse(raw));
+        let digit_slice = &buf[2..len];
+        if !digit_slice.iter().all(u8::is_ascii_digit) {
+            return Some(Err(CuiError::InvalidCharacters));
+        }
+        if raw.len() > crate::MAX_ID_SCAN_CHARS || digit_slice.len() > 10 {
+            return Some(Err(CuiError::InvalidLength {
+                len: digit_slice.len(),
+            }));
+        }
+        let mut digits = [0u8; 10];
+        digits[..digit_slice.len()].copy_from_slice(digit_slice);
+        return Some(Cui::from_validated_digits(digits, digit_slice.len(), true));
     }
 
-    ((2..=10).contains(&len) && buf[..len].iter().all(u8::is_ascii_digit)).then(|| Cui::parse(raw))
+    if (2..=10).contains(&len) && buf[..len].iter().all(u8::is_ascii_digit) {
+        let mut digits = [0u8; 10];
+        digits[..len].copy_from_slice(&buf[..len]);
+        return Some(Cui::from_validated_digits(digits, len, false));
+    }
+    None
 }

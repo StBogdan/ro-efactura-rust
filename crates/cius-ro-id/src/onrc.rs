@@ -170,7 +170,11 @@ impl Onrc {
     pub fn parse(raw: &str) -> Result<Self, OnrcError> {
         let mut buf = [0u8; 32];
         let mut len = 0usize;
-        for ch in raw.chars().filter(|c| !c.is_whitespace()) {
+        for ch in raw
+            .chars()
+            .take(crate::MAX_ID_SCAN_CHARS)
+            .filter(|c| !c.is_whitespace())
+        {
             if len == 0 && (!ch.is_ascii() || OnrcRegister::from_ascii(ch as u8).is_none()) {
                 return Err(OnrcError::InvalidRegisterPrefix);
             }
@@ -179,6 +183,9 @@ impl Onrc {
             }
             buf[len] = ch as u8;
             len += 1;
+        }
+        if raw.len() > crate::MAX_ID_SCAN_CHARS {
+            return Err(OnrcError::InvalidFormat);
         }
         if len == 0 {
             return Err(OnrcError::Empty);
@@ -326,7 +333,10 @@ impl FromStr for Onrc {
 /// (starts with `J`, `F`, or `C` followed by a digit or `'/'`, ignoring whitespace).
 #[must_use]
 pub fn is_onrc_candidate(raw: &str) -> bool {
-    let mut non_ws = raw.chars().filter(|c| !c.is_whitespace());
+    let mut non_ws = raw
+        .chars()
+        .take(crate::MAX_ID_SCAN_CHARS)
+        .filter(|c| !c.is_whitespace());
     let (Some(c0), Some(c1)) = (non_ws.next(), non_ws.next()) else {
         return false;
     };

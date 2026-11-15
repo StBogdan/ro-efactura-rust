@@ -179,6 +179,9 @@ impl County {
     /// Strict ANAF `ISO 3166-2:RO` lookup (exact uppercase match after trimming, e.g. `"RO-CJ"`, `"RO-B"`).
     #[must_use]
     pub fn from_code(code: &str) -> Option<Self> {
+        if code.len() > crate::MAX_ID_SCAN_CHARS {
+            return None;
+        }
         let trimmed = code.trim();
         COUNTY_TABLE
             .iter()
@@ -253,7 +256,7 @@ impl FromStr for County {
     type Err = SubdivisionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_code(s).ok_or_else(|| SubdivisionError::InvalidCountyCode(s.trim().to_string()))
+        Self::from_code(s).ok_or_else(|| SubdivisionError::InvalidCountyCode(bounded_err_token(s)))
     }
 }
 
@@ -286,6 +289,9 @@ impl BucharestSector {
     /// Strict ANAF lookup (`"SECTOR1"`..`"SECTOR6"`).
     #[must_use]
     pub fn from_code(code: &str) -> Option<Self> {
+        if code.len() > crate::MAX_ID_SCAN_CHARS {
+            return None;
+        }
         let rest = code.trim().strip_prefix("SECTOR")?;
         (rest.len() == 1).then(|| Self::from_number(rest.as_bytes()[0].wrapping_sub(b'0')))?
     }
@@ -343,11 +349,19 @@ impl FromStr for BucharestSector {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_code(s)
-            .ok_or_else(|| SubdivisionError::InvalidBucharestSector(s.trim().to_string()))
+            .ok_or_else(|| SubdivisionError::InvalidBucharestSector(bounded_err_token(s)))
     }
 }
 
+fn bounded_err_token(s: &str) -> String {
+    let cap = crate::clamp_char_boundary(s, crate::MAX_ID_SCAN_CHARS);
+    s[..cap].trim().to_string()
+}
+
 fn fold_ascii_upper(s: &str) -> String {
+    if s.len() > crate::MAX_ID_SCAN_CHARS {
+        return String::new();
+    }
     let trimmed = s.trim();
     if trimmed.len() > 256 {
         return String::new();

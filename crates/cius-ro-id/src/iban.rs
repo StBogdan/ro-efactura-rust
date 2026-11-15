@@ -109,11 +109,19 @@ impl RoIban {
         let mut len = 0usize;
         let mut all_ascii = true;
 
-        for ch in raw.chars().filter(|c| !c.is_whitespace() && *c != '-') {
+        for ch in raw
+            .chars()
+            .take(crate::MAX_ID_SCAN_CHARS)
+            .filter(|c| !c.is_whitespace() && *c != '-')
+        {
+            if (len == 0 && !matches!(ch, 'R' | 'r')) || (len == 1 && !matches!(ch, 'O' | 'o')) {
+                return Err(IbanError::NotRomanianCountryCode);
+            }
+            if len == buf.len() {
+                return Err(IbanError::InvalidLength { len: buf.len() + 1 });
+            }
             if ch.is_ascii() {
-                if len < buf.len() {
-                    buf[len] = ch.to_ascii_uppercase() as u8;
-                }
+                buf[len] = ch.to_ascii_uppercase() as u8;
             } else {
                 all_ascii = false;
             }
@@ -121,20 +129,16 @@ impl RoIban {
         }
 
         if len == 0 {
-            return Err(IbanError::Empty);
+            return if raw.len() > crate::MAX_ID_SCAN_CHARS {
+                Err(IbanError::InvalidLength { len: 0 })
+            } else {
+                Err(IbanError::Empty)
+            };
         }
-        if len < 2 || !all_ascii && len == 2 || &buf[..2] != b"RO" {
-            // Double check first 2 non-ws/non-hyphen chars directly when non-ASCII appears later
-            let mut prefix = raw.chars().filter(|c| !c.is_whitespace() && *c != '-');
-            let is_ro = matches!(
-                (prefix.next(), prefix.next()),
-                (Some('R' | 'r'), Some('O' | 'o'))
-            );
-            if !is_ro {
-                return Err(IbanError::NotRomanianCountryCode);
-            }
+        if len < 2 {
+            return Err(IbanError::NotRomanianCountryCode);
         }
-        if len != 24 {
+        if raw.len() > crate::MAX_ID_SCAN_CHARS || len != 24 {
             return Err(IbanError::InvalidLength { len });
         }
         if !all_ascii
@@ -145,11 +149,10 @@ impl RoIban {
             return Err(IbanError::InvalidStructure);
         }
 
-        let compact = core::str::from_utf8(&buf).unwrap_or_default();
+        let compact = core::str::from_utf8(&buf).map_err(|_| IbanError::InvalidStructure)?;
         compact.parse::<Iban>().map(Self).map_err(|_| {
             let actual = (buf[2] - b'0') * 10 + (buf[3] - b'0');
-            let expected =
-                compute_ro_iban_check_digits(&compact[4..8], &compact[8..24]).unwrap_or(0);
+            let expected = compute_ro_iban_check_digits_unchecked(&buf[4..8], &buf[8..24]);
             IbanError::InvalidChecksum { expected, actual }
         })
     }
@@ -169,7 +172,7 @@ impl RoIban {
     /// Returns the 4-letter bank identifier prefix (positions `4..8`, e.g. `"BTRL"`, `"RNCB"`, `"TREZ"`).
     #[must_use]
     pub fn bank_code(&self) -> &str {
-        self.0.bank_identifier().unwrap_or_default()
+        &self.0.bban()[..4]
     }
 
     /// Returns the 16-character alphanumeric account identifier (positions `8..24`).
@@ -214,16 +217,23 @@ pub fn compute_ro_iban_check_digits(bank_code: &str, account: &str) -> Result<u8
         return Err(IbanError::InvalidStructure);
     }
 
+    Ok(compute_ro_iban_check_digits_unchecked(
+        bank_code.as_bytes(),
+        account.as_bytes(),
+    ))
+}
+
+fn compute_ro_iban_check_digits_unchecked(bank_code: &[u8], account: &[u8]) -> u8 {
     let rem = bank_code
-        .bytes()
-        .chain(account.bytes())
-        .chain(*b"RO00")
-        .fold(0u64, |r, b| {
+        .iter()
+        .chain(account.iter())
+        .chain(b"RO00".iter())
+        .fold(0u64, |r, &b| {
             if b.is_ascii_digit() {
                 (r * 10 + u64::from(b - b'0')) % 97
             } else {
                 (r * 100 + u64::from(b.to_ascii_uppercase() - b'A' + 10)) % 97
             }
         });
-    Ok(u8::try_from(98 - rem).unwrap_or(0))
+    u8::try_from(98 - rem).expect("ISO 7064 MOD 97-10 check digits are in 2..=98")
 }

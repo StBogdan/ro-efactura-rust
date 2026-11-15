@@ -307,15 +307,65 @@ fn test_serde_canonical_strings_and_invariant_enforcement() {
 #[test]
 fn test_bounded_overlong_inputs_do_not_panic() {
     let huge_digits = "9".repeat(100_000);
-    assert!(matches!(
+    let huge_spaces = " ".repeat(100_000);
+
+    // Parsers short-circuit in O(1) as soon as non-separator count exceeds format cap
+    assert_eq!(
         Cui::parse(&huge_digits),
-        Err(CuiError::InvalidLength { len: 100_000 })
+        Err(CuiError::InvalidLength { len: 11 })
+    );
+    assert_eq!(
+        Cui::parse(&format!("RO{huge_digits}")),
+        Err(CuiError::InvalidLength { len: 11 })
+    );
+    assert!(Cui::parse(&huge_spaces).is_err());
+    assert!(Cui::parse(&format!("RO45678918{huge_spaces}GARBAGE")).is_err());
+
+    assert_eq!(parse_cui_candidate(&huge_digits), None);
+    assert!(matches!(
+        parse_cui_candidate(&format!("RO{huge_digits}")),
+        Some(Err(CuiError::InvalidLength { .. }))
     ));
-    assert!(Cnp::parse(&huge_digits).is_err());
-    assert!(RoIban::parse(&format!("RO{huge_digits}")).is_err());
+    assert_eq!(parse_cui_candidate(&huge_spaces), None);
+
+    assert_eq!(
+        Cnp::parse(&huge_digits),
+        Err(CnpError::InvalidLength { len: 14 })
+    );
+    assert!(Cnp::parse(&huge_spaces).is_err());
+    assert!(Cnp::parse(&format!("1900101410011{huge_spaces}GARBAGE")).is_err());
+    assert!(!is_anaf_b2c_placeholder(&format!(
+        "0000000000000{huge_spaces}"
+    )));
+
+    assert_eq!(
+        RoIban::parse(&format!("RO{huge_digits}")),
+        Err(IbanError::InvalidLength { len: 25 })
+    );
+    assert_eq!(
+        RoIban::parse(&format!("DE{huge_digits}")),
+        Err(IbanError::NotRomanianCountryCode)
+    );
+    assert!(RoIban::parse(&huge_spaces).is_err());
+    assert!(RoIban::parse(&format!("RO49AAAA1B31007593840000{huge_spaces}X")).is_err());
+
     assert!(Onrc::parse(&format!("J{huge_digits}")).is_err());
+    assert!(Onrc::parse(&huge_spaces).is_err());
+    assert!(Onrc::parse(&format!("J40/1234/2022{huge_spaces}GARBAGE")).is_err());
+
+    assert_eq!(County::from_code(&huge_spaces), None);
     assert_eq!(County::lookup_fuzzy(&huge_digits), None);
+    assert_eq!(County::lookup_fuzzy(&huge_spaces), None);
+    assert_eq!(BucharestSector::from_code(&huge_spaces), None);
     assert_eq!(BucharestSector::normalize_fuzzy(&huge_digits), None);
+    assert_eq!(BucharestSector::normalize_fuzzy(&huge_spaces), None);
+
+    // Unified inspector must never mark padded overlong inputs with trailing garbage as valid
+    assert!(!inspect_identifier(&format!("RO45678918{huge_spaces}GARBAGE"), Locale::En).is_valid);
+    assert!(!inspect_identifier(&format!("RO-CJ{huge_spaces}GARBAGE"), Locale::En).is_valid);
+    assert!(
+        !inspect_identifier(&format!("0000000000000{huge_spaces}GARBAGE"), Locale::En).is_valid
+    );
 }
 
 proptest! {
