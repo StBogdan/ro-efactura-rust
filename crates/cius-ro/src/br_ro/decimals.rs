@@ -7,8 +7,8 @@ use super::{
     CII_NS, CII_RAM_NS, CII_UDT_NS, UBL_CAC_NS, UBL_CBC_NS, child_elem, child_text, children_named,
     is_xsd_true,
 };
-use crate::stage_acc::StageAcc;
-use crate::types::{Locale, XmlSyntax};
+use crate::stage_acc::{StageAcc, tr_fmt};
+use crate::types::XmlSyntax;
 
 const UBL_MONETARY_TOTAL_DECIMALS: &[(&str, &str, &str, &str)] = &[
     (
@@ -186,14 +186,11 @@ fn check_decimal_node(
     if has_valid_max_2_decimals(raw) {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Monetary amount ({bt}) '{raw}' must be a valid decimal with at most 2 fractional digits under CIUS-RO ({sub})."
-            ),
-            Locale::Ro => format!(
-                "Suma monetară ({bt}) '{raw}' trebuie să fie un număr zecimal valid cu cel mult 2 zecimale conform CIUS-RO ({sub})."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Monetary amount ({bt}) '{raw}' must be a valid decimal with at most 2 fractional digits under CIUS-RO ({sub}).",
+            "Suma monetară ({bt}) '{raw}' trebuie să fie un număr zecimal valid cu cel mult 2 zecimale conform CIUS-RO ({sub})."
+        );
         acc.fatal_sub("BR-RO-Z2", sub, bt, loc, msg);
     }
 }

@@ -8,21 +8,22 @@
 //!   `uppsala` to resolve relative `<xs:import schemaLocation="..."/>` directives), compiled into
 //!   reusable [`uppsala::XsdValidator`] state machines, and the temporary directory is deleted
 //!   immediately before [`warm_xsd_validators`] returns.
-//! - On `wasm32-unknown-unknown`, `uppsala::Parser` enforces XML 1.0 well-formedness, maximum
-//!   element nesting depth (`64`), and strict `DOCTYPE`/`ENTITY` (`XXE`) prohibition in memory.
+//! - On `wasm32-unknown-unknown`, XML 1.0 well-formedness, maximum element nesting depth (`64`),
+//!   and strict `DOCTYPE`/`ENTITY` (`XXE`) prohibition are enforced directly on the shared
+//!   [`roxmltree::Document`] without re-parsing the XML into a second DOM.
 
 use core::fmt;
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use uppsala::Parser;
 
 use crate::stage_acc::{StageAcc, StageFinding};
-use crate::types::{
-    EngineId, EngineReport, Locale, ValidateOptions, Violation, XmlDecodeError, XmlSyntax,
-};
+use crate::types::{EngineId, EngineReport, ValidateOptions, Violation, XmlDecodeError, XmlSyntax};
 
 pub(crate) const ENGINE_ID: EngineId = EngineId::XsdSchema;
 pub(crate) const ENGINE_NAME: &str = "Official W3C XSD 1.1 Grammar Validator";
 const DEFAULT_VERSION: &str = "W3C XSD 1.1";
+const MAX_XML_ELEMENT_DEPTH: u32 = 64;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 const MAX_REPORTED_XSD_ERRORS: usize = 100;
 
@@ -76,7 +77,7 @@ pub(crate) struct XsdOutcome {
 mod native_compiled {
     use std::fs;
     use std::path::Path;
-    use std::sync::OnceLock;
+    use std::sync::{Mutex, OnceLock};
     use uppsala::XsdValidator;
 
     use super::XsdInitError;
@@ -176,13 +177,32 @@ mod native_compiled {
         pub ubl_credit_note_2_1: XsdValidator,
     }
 
-    static XSD_SUITES: OnceLock<Result<CompiledXsdSuites, XsdInitError>> = OnceLock::new();
+    static XSD_SUITES: OnceLock<CompiledXsdSuites> = OnceLock::new();
+    static XSD_INIT_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(super) fn get_or_try_init<'a, T, E>(
+        cell: &'a OnceLock<T>,
+        lock: &Mutex<()>,
+        init: impl FnOnce() -> Result<T, E>,
+    ) -> Result<&'a T, E> {
+        if let Some(val) = cell.get() {
+            return Ok(val);
+        }
+        let _guard = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(val) = cell.get() {
+            return Ok(val);
+        }
+        let val = init()?;
+        let _ = cell.set(val);
+        Ok(cell
+            .get()
+            .expect("OnceLock cell was populated while holding init lock"))
+    }
 
     pub(super) fn get_validators() -> Result<&'static CompiledXsdSuites, XsdInitError> {
-        XSD_SUITES
-            .get_or_init(compile_all_xsd_suites)
-            .as_ref()
-            .map_err(Clone::clone)
+        get_or_try_init(&XSD_SUITES, &XSD_INIT_LOCK, compile_all_xsd_suites)
     }
 
     fn compile_one(
@@ -251,7 +271,7 @@ pub fn warm_xsd_validators() -> Result<(), XsdInitError> {
 
 pub(crate) fn evaluate_xsd(
     xml_res: Result<&str, &XmlDecodeError>,
-    dtd_detected: bool,
+    roxml_res: Option<Result<&roxmltree::Document<'_>, &roxmltree::Error>>,
     syntax: Option<XmlSyntax>,
     opts: &ValidateOptions,
 ) -> XsdOutcome {
@@ -282,54 +302,29 @@ pub(crate) fn evaluate_xsd(
         }
     };
 
-    let parser = Parser::new()
-        .with_max_depth(64)
-        .with_max_entity_expansion(0)
-        .with_forbid_dtd(true)
-        .with_forbid_entities(true);
-    let doc = match parser.parse(xml) {
-        Ok(d) => d,
-        Err(err) => {
-            if dtd_detected || contains_dtd_or_entity_decl(xml) {
-                let msg = acc
-                    .tr(
-                        "XML DOCTYPE and ENTITY declarations are strictly forbidden in EN 16931 / RO e-Factura documents.",
-                        "Declarațiile XML DOCTYPE și ENTITY sunt strict interzise în facturile electronice EN 16931 / RO e-Factura.",
-                    )
-                    .to_owned();
-                let hint = acc
-                    .tr(
-                        "Remove all <!DOCTYPE ...> and <!ENTITY ...> declarations.",
-                        "Eliminați toate declarațiile <!DOCTYPE ...> și <!ENTITY ...> din documentul XML.",
-                    )
-                    .to_owned();
-                acc.record(
-                    StageFinding::fatal("XSD-XXE-PROHIBITED", msg)
-                        .term("XML 1.0 DTD / XXE Prohibition")
-                        .location("XML Prologue")
-                        .hint(hint),
-                );
-                return finish(acc);
+    let roxml_doc = match roxml_res {
+        Some(Ok(doc)) => doc,
+        Some(Err(err)) => {
+            if matches!(err, roxmltree::Error::DtdDetected) || contains_dtd_or_entity_decl(xml) {
+                record_xxe_prohibited(&mut acc);
+            } else {
+                record_wellformedness_error(&mut acc, &err.to_string());
             }
-            let err_str = err.to_string();
-            let msg = match acc.locale() {
-                Locale::En => format!("XML document is not well-formed: {err_str}"),
-                Locale::Ro => format!("Documentul XML nu este bine format: {err_str}"),
-            };
-            let hint = acc
-                .tr(
-                    "Fix XML syntax, closing tags, and namespace declarations.",
-                    "Corectați sintaxa XML, etichetele de închidere și declarațiile de namespace.",
-                )
-                .to_owned();
-            acc.record(
-                StageFinding::fatal("XSD-WELLFORMEDNESS", msg)
-                    .term("W3C XML 1.0")
-                    .hint(hint),
-            );
+            return finish(acc);
+        }
+        None => {
+            record_wellformedness_error(&mut acc, "XML parse result unavailable");
             return finish(acc);
         }
     };
+
+    if exceeds_max_element_depth(roxml_doc, MAX_XML_ELEMENT_DEPTH) {
+        record_wellformedness_error(
+            &mut acc,
+            &format!("element nesting depth exceeds maximum limit ({MAX_XML_ELEMENT_DEPTH})"),
+        );
+        return finish(acc);
+    }
 
     let Some(syntax_kind) = syntax else {
         acc.set_version("UBL 2.1 / CII D16B");
@@ -349,7 +344,7 @@ pub(crate) fn evaluate_xsd(
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
-        let _ = doc;
+        let _ = xml;
         XsdOutcome {
             report: EngineReport::skipped(
                 ENGINE_ID,
@@ -363,8 +358,77 @@ pub(crate) fn evaluate_xsd(
 
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     {
+        let parser = Parser::new()
+            .with_max_depth(MAX_XML_ELEMENT_DEPTH)
+            .with_max_entity_expansion(0)
+            .with_forbid_dtd(true)
+            .with_forbid_entities(true);
+        let doc = match parser.parse(xml) {
+            Ok(d) => d,
+            Err(err) => {
+                if contains_dtd_or_entity_decl(xml) {
+                    record_xxe_prohibited(&mut acc);
+                } else {
+                    record_wellformedness_error(&mut acc, &err.to_string());
+                }
+                return finish(acc);
+            }
+        };
         evaluate_native_xsd(&doc, syntax_kind, acc)
     }
+}
+
+fn record_xxe_prohibited(acc: &mut StageAcc) {
+    let msg = acc
+        .tr(
+            "XML DOCTYPE and ENTITY declarations are strictly forbidden in EN 16931 / RO e-Factura documents.",
+            "Declarațiile XML DOCTYPE și ENTITY sunt strict interzise în facturile electronice EN 16931 / RO e-Factura.",
+        )
+        .to_owned();
+    let hint = acc
+        .tr(
+            "Remove all <!DOCTYPE ...> and <!ENTITY ...> declarations.",
+            "Eliminați toate declarațiile <!DOCTYPE ...> și <!ENTITY ...> din documentul XML.",
+        )
+        .to_owned();
+    acc.record(
+        StageFinding::fatal("XSD-XXE-PROHIBITED", msg)
+            .term("XML 1.0 DTD / XXE Prohibition")
+            .location("XML Prologue")
+            .hint(hint),
+    );
+}
+
+fn record_wellformedness_error(acc: &mut StageAcc, detail: &str) {
+    let msg = crate::stage_acc::tr_fmt!(
+        acc,
+        "XML document is not well-formed: {detail}",
+        "Documentul XML nu este bine format: {detail}"
+    );
+    let hint = acc
+        .tr(
+            "Fix XML syntax, closing tags, and namespace declarations.",
+            "Corectați sintaxa XML, etichetele de închidere și declarațiile de namespace.",
+        )
+        .to_owned();
+    acc.record(
+        StageFinding::fatal("XSD-WELLFORMEDNESS", msg)
+            .term("W3C XML 1.0")
+            .hint(hint),
+    );
+}
+
+fn exceeds_max_element_depth(doc: &roxmltree::Document<'_>, max_depth: u32) -> bool {
+    let mut stack = vec![(doc.root_element(), 1u32)];
+    while let Some((node, depth)) = stack.pop() {
+        if depth > max_depth {
+            return true;
+        }
+        for child in node.children().filter(roxmltree::Node::is_element) {
+            stack.push((child, depth + 1));
+        }
+    }
+    false
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -422,14 +486,11 @@ fn evaluate_native_xsd(
     if xsd_errors.len() > MAX_REPORTED_XSD_ERRORS {
         let omitted = xsd_errors.len() - MAX_REPORTED_XSD_ERRORS;
         acc.add_unreported_failures(omitted);
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "{omitted} additional XSD schema error(s) omitted (output capped at {MAX_REPORTED_XSD_ERRORS} findings)."
-            ),
-            Locale::Ro => format!(
-                "Încă {omitted} erori de schemă XSD au fost omise (afișarea este limitată la primele {MAX_REPORTED_XSD_ERRORS} erori)."
-            ),
-        };
+        let msg = crate::stage_acc::tr_fmt!(
+            acc,
+            "{omitted} additional XSD schema error(s) omitted (output capped at {MAX_REPORTED_XSD_ERRORS} findings).",
+            "Încă {omitted} erori de schemă XSD au fost omise (afișarea este limitată la primele {MAX_REPORTED_XSD_ERRORS} erori)."
+        );
         acc.record_uncounted(
             StageFinding::new(crate::types::Severity::Info, "XSD-SCHEMA-TRUNCATED", msg)
                 .term(spec_label)
@@ -511,4 +572,29 @@ fn has_decl_keyword(rest: &[u8], kw: &[u8]) -> bool {
         && rest
             .get(kw.len())
             .is_none_or(|b| b.is_ascii_whitespace() || matches!(b, b'>' | b'['))
+}
+
+#[cfg(all(test, not(all(target_arch = "wasm32", target_os = "unknown"))))]
+mod tests {
+    use std::sync::{Mutex, OnceLock};
+
+    use super::native_compiled::get_or_try_init;
+
+    #[test]
+    fn transient_init_failure_does_not_poison_oncelock() {
+        let cell: OnceLock<u32> = OnceLock::new();
+        let lock = Mutex::new(());
+
+        let first = get_or_try_init(&cell, &lock, || Err::<u32, &'static str>("tmpdir full"));
+        assert_eq!(first, Err("tmpdir full"));
+        assert!(cell.get().is_none(), "transient Err must not be cached");
+
+        let second = get_or_try_init(&cell, &lock, || Ok::<u32, &'static str>(42));
+        assert_eq!(second, Ok(&42));
+
+        let third = get_or_try_init(&cell, &lock, || -> Result<u32, &'static str> {
+            panic!("OnceLock was already initialized; closure must not re-run");
+        });
+        assert_eq!(third, Ok(&42));
+    }
 }

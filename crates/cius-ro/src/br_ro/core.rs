@@ -5,8 +5,8 @@ use en16931::Invoice;
 use roxmltree::Node;
 
 use super::{CII_NS, CII_RAM_NS, UBL_CAC_NS, UBL_CBC_NS, child_elem, children_named};
-use crate::stage_acc::StageAcc;
-use crate::types::{Locale, ValidateOptions, XmlSyntax};
+use crate::stage_acc::{StageAcc, tr_fmt};
+use crate::types::{ValidateOptions, XmlSyntax};
 
 pub(super) fn check_core_rules(
     inv: &Invoice,
@@ -20,18 +20,11 @@ pub(super) fn check_core_rules(
     if num.bytes().any(|b| b.is_ascii_digit()) {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => {
-                format!(
-                    "Invoice number (BT-1) '{num}' must contain at least one numeric digit (0-9)."
-                )
-            }
-            Locale::Ro => {
-                format!(
-                    "Numărul facturii (BT-1) '{num}' trebuie să conțină cel puțin o cifră (0-9)."
-                )
-            }
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Invoice number (BT-1) '{num}' must contain at least one numeric digit (0-9).",
+            "Numărul facturii (BT-1) '{num}' trebuie să conțină cel puțin o cifră (0-9)."
+        );
         acc.fatal_sub("BR-RO-010", "BR-RO-010", "BT-1", "BT-1", msg);
     }
 
@@ -48,14 +41,11 @@ pub(super) fn check_core_rules(
     if tc_ok {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Invoice type code (BT-3) '{tc}' is not allowed in CIUS-RO (permitted: 380, 384, 389, 751, or 381 for CreditNote)."
-            ),
-            Locale::Ro => format!(
-                "Codul tipului de factură (BT-3) '{tc}' nu este permis în CIUS-RO (valori permise: 380, 384, 389, 751 sau 381 pentru CreditNote)."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Invoice type code (BT-3) '{tc}' is not allowed in CIUS-RO (permitted: 380, 384, 389, 751, or 381 for CreditNote).",
+            "Codul tipului de factură (BT-3) '{tc}' nu este permis în CIUS-RO (valori permise: 380, 384, 389, 751 sau 381 pentru CreditNote)."
+        );
         acc.fatal_sub("BR-RO-020", tc_sub, "BT-3", "BT-3", msg);
     }
 
@@ -81,14 +71,11 @@ fn check_foreign_currency_and_tax_point_rules(
         if tax_ccy_ron && has_ron_vat {
             acc.pass();
         } else {
-            let msg = match acc.locale() {
-                Locale::En => format!(
-                    "When DocumentCurrencyCode (BT-5) is '{doc_ccy}' (other than 'RON'), TaxCurrencyCode (BT-6) must be 'RON' and VAT total in accounting currency (BT-111) must be provided."
-                ),
-                Locale::Ro => format!(
-                    "Dacă moneda facturii (BT-5) este '{doc_ccy}' (alta decât 'RON'), moneda de contabilizare a TVA (BT-6) trebuie să fie 'RON', împreună cu valoarea totală a TVA în RON (BT-111)."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "When DocumentCurrencyCode (BT-5) is '{doc_ccy}' (other than 'RON'), TaxCurrencyCode (BT-6) must be 'RON' and VAT total in accounting currency (BT-111) must be provided.",
+                "Dacă moneda facturii (BT-5) este '{doc_ccy}' (alta decât 'RON'), moneda de contabilizare a TVA (BT-6) trebuie să fie 'RON', împreună cu valoarea totală a TVA în RON (BT-111)."
+            );
             acc.fatal_sub(
                 "BR-RO-030",
                 "BR-RO-030",
@@ -144,16 +131,11 @@ fn check_bt8_ubl_code(code: &str, loc: &str, acc: &mut StageAcc) {
     if matches!(code, "3" | "35" | "432") {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => {
-                format!(
-                    "Value added tax point date code (BT-8) '{code}' must be one of 3, 35, or 432."
-                )
-            }
-            Locale::Ro => format!(
-                "Codul datei exigibilității TVA (BT-8) '{code}' trebuie să fie unul dintre: 3, 35 sau 432."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Value added tax point date code (BT-8) '{code}' must be one of 3, 35, or 432.",
+            "Codul datei exigibilității TVA (BT-8) '{code}' trebuie să fie unul dintre: 3, 35 sau 432."
+        );
         acc.fatal_sub("BR-RO-040", "BR-RO-040", "BT-8", loc, msg);
     }
 }
@@ -162,14 +144,11 @@ fn check_bt8_cii_code(code: &str, loc: &str, acc: &mut StageAcc) {
     if matches!(code, "5" | "29" | "72") {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "CII DueDateTypeCode (BT-8) '{code}' must be one of 5, 29, or 72 (UNTDID 2475 corresponding to 3, 35, 432)."
-            ),
-            Locale::Ro => format!(
-                "Codul CII DueDateTypeCode (BT-8) '{code}' trebuie să fie unul dintre: 5, 29 sau 72 (UNTDID 2475 aferent codurilor 3, 35, 432)."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "CII DueDateTypeCode (BT-8) '{code}' must be one of 5, 29, or 72 (UNTDID 2475 corresponding to 3, 35, 432).",
+            "Codul CII DueDateTypeCode (BT-8) '{code}' trebuie să fie unul dintre: 5, 29 sau 72 (UNTDID 2475 aferent codurilor 3, 35, 432)."
+        );
         acc.fatal_sub("BR-RO-040", "BR-RO-040", "BT-8", loc, msg);
     }
 }
@@ -250,16 +229,12 @@ fn check_cap(count: usize, spec: &CardinalitySpec, acc: &mut StageAcc) {
     if count <= spec.max {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Maximum {} {} ({}) are allowed in CIUS-RO (found {count}).",
-                spec.max, spec.label_en, spec.bg
-            ),
-            Locale::Ro => format!(
-                "În CIUS-RO sunt permise maximum {} elemente {} ({}) (găsit: {count}).",
-                spec.max, spec.label_ro, spec.bg
-            ),
-        };
+        let (max, bg, label) = (spec.max, spec.bg, acc.tr(spec.label_en, spec.label_ro));
+        let msg = tr_fmt!(
+            acc,
+            "Maximum {max} {label} ({bg}) are allowed in CIUS-RO (found {count}).",
+            "În CIUS-RO sunt permise maximum {max} elemente {label} ({bg}) (găsit: {count})."
+        );
         acc.fatal_sub(spec.code, spec.sub_id, spec.bg, spec.bg, msg);
     }
 }

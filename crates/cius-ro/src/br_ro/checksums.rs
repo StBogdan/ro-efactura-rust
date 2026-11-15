@@ -8,8 +8,34 @@ use en16931::Invoice;
 use en16931::invoice::{Party, PaymentMeans};
 
 use super::addr_country;
-use crate::stage_acc::{StageAcc, StageFinding};
-use crate::types::Locale;
+use crate::stage_acc::{StageAcc, StageFinding, tr_fmt};
+
+/// Stack-allocated bounded set for deduplicating a small slice of candidate identifier strings
+/// without heap allocation or index-out-of-bounds panics.
+struct SeenSmall<'a, const N: usize> {
+    items: [&'a str; N],
+    len: usize,
+}
+
+impl<'a, const N: usize> SeenSmall<'a, N> {
+    const fn new() -> Self {
+        Self {
+            items: [""; N],
+            len: 0,
+        }
+    }
+
+    fn insert(&mut self, val: &'a str) -> bool {
+        if self.items[..self.len].contains(&val) {
+            return false;
+        }
+        if let Some(slot) = self.items.get_mut(self.len) {
+            *slot = val;
+            self.len += 1;
+        }
+        true
+    }
+}
 
 struct ChecksumRoleSpec {
     role_en: &'static str,
@@ -51,17 +77,12 @@ pub(super) fn check_all_checksums(inv: &Invoice, acc: &mut StageAcc) {
         match res {
             Ok(_) => acc.pass(),
             Err(e) => {
-                let locale = acc.locale();
-                let msg = match locale {
-                    Locale::En => format!(
-                        "Tax representative fiscal identifier '{tr_vat}' fails CUI validation: {}",
-                        e.display(locale)
-                    ),
-                    Locale::Ro => format!(
-                        "Identificatorul fiscal al reprezentantului fiscal '{tr_vat}' este invalid: {}",
-                        e.display(locale)
-                    ),
-                };
+                let err = e.display(acc.locale());
+                let msg = tr_fmt!(
+                    acc,
+                    "Tax representative fiscal identifier '{tr_vat}' fails CUI validation: {err}",
+                    "Identificatorul fiscal al reprezentantului fiscal '{tr_vat}' este invalid: {err}"
+                );
                 acc.record(
                     StageFinding::warning("BR-RO-CUI", msg)
                         .sub_id("BR-RO-CUI")
@@ -84,17 +105,12 @@ pub(super) fn check_all_checksums(inv: &Invoice, acc: &mut StageAcc) {
                 match RoIban::parse(raw) {
                     Ok(_) => acc.pass(),
                     Err(e) => {
-                        let locale = acc.locale();
-                        let msg = match locale {
-                            Locale::En => format!(
-                                "Payee Romanian IBAN '{raw}' (BT-84) is invalid: {}",
-                                e.display(locale)
-                            ),
-                            Locale::Ro => format!(
-                                "Codul IBAN românesc '{raw}' (BT-84) este invalid: {}",
-                                e.display(locale)
-                            ),
-                        };
+                        let err = e.display(acc.locale());
+                        let msg = tr_fmt!(
+                            acc,
+                            "Payee Romanian IBAN '{raw}' (BT-84) is invalid: {err}",
+                            "Codul IBAN românesc '{raw}' (BT-84) este invalid: {err}"
+                        );
                         acc.record(
                             StageFinding::warning("BR-RO-IBAN", msg)
                                 .sub_id("BR-RO-IBAN")
@@ -159,35 +175,27 @@ fn check_party_checksums(party: &Party, role: &ChecksumRoleSpec, acc: &mut Stage
 }
 
 fn check_party_cui_candidates(
-    all_candidates: &[Option<&str>; 3],
+    all_candidates: &[Option<&str>],
     role: &ChecksumRoleSpec,
     acc: &mut StageAcc,
 ) {
-    let mut seen_cui: [Option<&str>; 3] = [None; 3];
-    let mut seen_cui_len = 0usize;
+    let mut seen = SeenSmall::<4>::new();
     for cand in all_candidates.iter().copied().flatten() {
         let trimmed = cand.trim();
-        if seen_cui[..seen_cui_len].contains(&Some(trimmed)) {
+        if !seen.insert(trimmed) {
             continue;
         }
         if let Some(res) = parse_cui_candidate(trimmed) {
-            seen_cui[seen_cui_len] = Some(trimmed);
-            seen_cui_len += 1;
             match res {
                 Ok(_) => acc.pass(),
                 Err(e) => {
-                    let locale = acc.locale();
-                    let (role_en, role_ro) = (role.role_en, role.role_ro);
-                    let msg = match locale {
-                        Locale::En => format!(
-                            "Romanian {role_en} fiscal identifier '{trimmed}' fails modulo-11 verification: {}",
-                            e.display(locale)
-                        ),
-                        Locale::Ro => format!(
-                            "Identificatorul fiscal al {role_ro}ului '{trimmed}' a eșuat verificarea cifrei de control modulo-11: {}",
-                            e.display(locale)
-                        ),
-                    };
+                    let role_lbl = acc.tr(role.role_en, role.role_ro);
+                    let err = e.display(acc.locale());
+                    let msg = tr_fmt!(
+                        acc,
+                        "Romanian {role_lbl} fiscal identifier '{trimmed}' fails modulo-11 verification: {err}",
+                        "Identificatorul fiscal al {role_lbl}ului '{trimmed}' a eșuat verificarea cifrei de control modulo-11: {err}"
+                    );
                     let hint = acc
                         .tr(
                             "Verify the CUI/CIF against the ANAF / Ministry of Finance register.",
@@ -210,38 +218,30 @@ fn check_party_cui_candidates(
 }
 
 fn check_party_cnp_candidates(
-    all_candidates: &[Option<&str>; 3],
+    all_candidates: &[Option<&str>],
     role: &ChecksumRoleSpec,
     acc: &mut StageAcc,
 ) {
-    let mut seen_cnp: [Option<&str>; 3] = [None; 3];
-    let mut seen_cnp_len = 0usize;
+    let mut seen = SeenSmall::<4>::new();
     for cand in all_candidates.iter().copied().flatten() {
         let t = cand.trim();
-        if seen_cnp[..seen_cnp_len].contains(&Some(t)) {
+        if !seen.insert(t) {
             continue;
         }
         if t.len() == 13 && t.bytes().all(|b| b.is_ascii_digit()) {
-            seen_cnp[seen_cnp_len] = Some(t);
-            seen_cnp_len += 1;
             if is_anaf_b2c_placeholder(t) {
                 acc.pass();
             } else {
                 match Cnp::parse(t) {
                     Ok(_) => acc.pass(),
                     Err(e) => {
-                        let locale = acc.locale();
-                        let (role_en, role_ro) = (role.role_en, role.role_ro);
-                        let msg = match locale {
-                            Locale::En => format!(
-                                "Romanian {role_en} 13-digit identifier '{t}' fails CNP verification: {}",
-                                e.display(locale)
-                            ),
-                            Locale::Ro => format!(
-                                "Identificatorul de 13 cifre al {role_ro}ului '{t}' nu este un CNP valid: {}",
-                                e.display(locale)
-                            ),
-                        };
+                        let role_lbl = acc.tr(role.role_en, role.role_ro);
+                        let err = e.display(acc.locale());
+                        let msg = tr_fmt!(
+                            acc,
+                            "Romanian {role_lbl} 13-digit identifier '{t}' fails CNP verification: {err}",
+                            "Identificatorul de 13 cifre al {role_lbl}ului '{t}' nu este un CNP valid: {err}"
+                        );
                         let hint = acc
                             .tr(
                                 "Use '0000000000000' for B2C consumers who do not provide a CNP.",
@@ -269,18 +269,13 @@ fn check_party_onrc(legal_id: Option<&str>, role: &ChecksumRoleSpec, acc: &mut S
         match Onrc::parse(legal) {
             Ok(_) => acc.pass(),
             Err(e) => {
-                let locale = acc.locale();
-                let (role_en, role_ro) = (role.role_en, role.role_ro);
-                let msg = match locale {
-                    Locale::En => format!(
-                        "Romanian {role_en} Trade Register number '{legal}' is malformed: {}",
-                        e.display(locale)
-                    ),
-                    Locale::Ro => format!(
-                        "Numărul din Registrul Comerțului (ONRC) '{legal}' al {role_ro}ului este invalid: {}",
-                        e.display(locale)
-                    ),
-                };
+                let role_lbl = acc.tr(role.role_en, role.role_ro);
+                let err = e.display(acc.locale());
+                let msg = tr_fmt!(
+                    acc,
+                    "Romanian {role_lbl} Trade Register number '{legal}' is malformed: {err}",
+                    "Numărul din Registrul Comerțului (ONRC) '{legal}' al {role_lbl}ului este invalid: {err}"
+                );
                 acc.record(
                     StageFinding::warning("BR-RO-ONRC", msg)
                         .sub_id("BR-RO-ONRC")

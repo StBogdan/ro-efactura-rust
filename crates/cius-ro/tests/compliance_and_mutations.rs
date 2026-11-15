@@ -1781,3 +1781,94 @@ fn pdfa3_single_stream_extraction_skips_unrelated_attachments_and_guards_xref() 
         pdf_err.message(Locale::Ro)
     );
 }
+
+#[cfg(feature = "xsd")]
+#[test]
+fn xsd_deeply_nested_elements_exceeding_max_depth_rejected_pre_uppsala() {
+    let mut deep_xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+    for _ in 0..70 {
+        deep_xml.push_str("<n>");
+    }
+    for _ in 0..70 {
+        deep_xml.push_str("</n>");
+    }
+    assert_has_code(deep_xml.as_bytes(), "XSD-WELLFORMEDNESS");
+}
+
+#[test]
+fn standalone_evaluate_cius_ro_rules_reports_fatal_on_malformed_or_unrecognized_xml() {
+    use cius_ro::{EngineStatus, evaluate_cius_ro_rules, validate_xml};
+
+    let opts = ValidateOptions::default();
+
+    // 1. Truncated UTF-16 BOM -> Failed with BR-RO-XML-ENCODING
+    let bad_utf16 = evaluate_cius_ro_rules(&[0xFF, 0xFE, 0x3C], &opts);
+    assert_eq!(bad_utf16.report.status, EngineStatus::Failed);
+    assert!(
+        bad_utf16
+            .violations
+            .iter()
+            .any(|v| v.code == "BR-RO-XML-ENCODING" && v.severity == Severity::Fatal)
+    );
+
+    // 2. Malformed XML -> Failed with BR-RO-XML-SYNTAX
+    let bad_syntax = evaluate_cius_ro_rules(b"<Invoice><unclosed", &opts);
+    assert_eq!(bad_syntax.report.status, EngineStatus::Failed);
+    assert!(
+        bad_syntax
+            .violations
+            .iter()
+            .any(|v| v.code == "BR-RO-XML-SYNTAX" && v.severity == Severity::Fatal)
+    );
+
+    // 3. DTD / XXE -> Failed with BR-RO-XXE-PROHIBITED
+    let xxe = evaluate_cius_ro_rules(b"<!DOCTYPE foo [<!ELEMENT foo ANY>]><foo/>", &opts);
+    assert_eq!(xxe.report.status, EngineStatus::Failed);
+    assert!(
+        xxe.violations
+            .iter()
+            .any(|v| v.code == "BR-RO-XXE-PROHIBITED" && v.severity == Severity::Fatal)
+    );
+
+    // 4. Unknown root element -> Failed with BR-RO-UNKNOWN-ROOT
+    let unknown_root = evaluate_cius_ro_rules(b"<Order xmlns=\"urn:example\"/>", &opts);
+    assert_eq!(unknown_root.report.status, EngineStatus::Failed);
+    assert!(
+        unknown_root
+            .violations
+            .iter()
+            .any(|v| v.code == "BR-RO-UNKNOWN-ROOT" && v.severity == Severity::Fatal)
+    );
+
+    // 5. Recognized UBL Invoice root missing mandatory CIUS-RO fields -> Failed with BR-RO-001
+    let empty_ubl = evaluate_cius_ro_rules(
+        b"<Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"/>",
+        &opts,
+    );
+    assert_eq!(empty_ubl.report.status, EngineStatus::Failed);
+    assert!(
+        empty_ubl
+            .violations
+            .iter()
+            .any(|v| v.code == "BR-RO-001" && v.severity == Severity::Fatal)
+    );
+
+    // 6. Explicitly disabling both CIUS-RO rules and checksums still yields Skipped
+    let disabled = evaluate_cius_ro_rules(
+        b"<Invoice><unclosed",
+        &ValidateOptions::default()
+            .cius_ro_rules(false)
+            .checksums(false),
+    );
+    assert_eq!(disabled.report.status, EngineStatus::Skipped);
+    assert!(disabled.violations.is_empty());
+
+    // 7. validate_xml with xsd(false).en16931(false) must still reject malformed/unknown XML
+    let only_ro_opts = ValidateOptions::default().xsd(false).en16931(false);
+    let rep_bad = validate_xml(b"<Invoice><unclosed", &only_ro_opts);
+    assert!(!rep_bad.is_valid);
+    assert_eq!(rep_bad.recommendation, Recommendation::Reject);
+    let rep_root = validate_xml(b"<UnknownRoot/>", &only_ro_opts);
+    assert!(!rep_root.is_valid);
+    assert_eq!(rep_root.recommendation, Recommendation::Reject);
+}

@@ -6,8 +6,7 @@ use en16931::Invoice;
 use en16931::invoice::PostalAddress;
 
 use super::{addr_country, non_empty};
-use crate::stage_acc::{StageAcc, StageFinding};
-use crate::types::Locale;
+use crate::stage_acc::{StageAcc, StageFinding, tr_fmt};
 
 const VAT_ACTIVE_CATEGORIES: &[&str] = &["S", "Z", "E", "AE", "K", "G", "L", "M"];
 
@@ -248,10 +247,12 @@ fn check_required_field(val: Option<&str>, spec: &RequiredFieldSpec, acc: &mut S
     if non_empty(val) {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => format!("{} must be provided.", spec.label_en),
-            Locale::Ro => format!("{} trebuie furnizată.", spec.label_ro),
-        };
+        let label = acc.tr(spec.label_en, spec.label_ro);
+        let msg = tr_fmt!(
+            acc,
+            "{label} must be provided.",
+            "{label} trebuie furnizată."
+        );
         acc.fatal_sub(spec.code, spec.sub_id, spec.bt, spec.loc, msg);
     }
 }
@@ -265,31 +266,30 @@ fn check_ro_county_and_sector(addr: &PostalAddress, spec: &PartyRoleSpec, acc: &
     if County::from_code(sub).is_some() {
         acc.pass();
     } else {
-        let (role_en, role_ro_gen, bt_sub) = (spec.role_en, spec.role_ro_gen, spec.bt_sub);
-        let fuzzy = County::lookup_fuzzy(sub);
-        let (msg, hint) = match acc.locale() {
-            Locale::En => (
-                format!(
-                    "When {role_en} country code is RO, country subdivision ({bt_sub}) '{sub}' must be coded using ISO 3166-2:RO (e.g. 'RO-B', 'RO-AB'..'RO-VN')."
-                ),
-                fuzzy.map_or_else(
-                    || "Use an ISO 3166-2:RO code such as 'RO-B', 'RO-CJ', 'RO-TM'.".to_owned(),
-                    |c| format!("Did you mean '{}' ({})?", c.code(), c.name_ro()),
-                ),
-            ),
-            Locale::Ro => (
-                format!(
-                    "Dacă țara {role_ro_gen} este RO, subdiviziunea țării ({bt_sub}) '{sub}' trebuie codificată conform listei ISO 3166-2:RO (ex. 'RO-B', 'RO-AB'..'RO-VN')."
-                ),
-                fuzzy.map_or_else(
-                    || {
-                        "Utilizați un cod ISO 3166-2:RO valid (ex. 'RO-B', 'RO-CJ', 'RO-TM')."
-                            .to_owned()
-                    },
-                    |c| format!("Înlocuiți valoarea cu '{}' ({}).", c.code(), c.name_ro()),
-                ),
-            ),
-        };
+        let role = acc.tr(spec.role_en, spec.role_ro_gen);
+        let bt_sub = spec.bt_sub;
+        let msg = tr_fmt!(
+            acc,
+            "When {role} country code is RO, country subdivision ({bt_sub}) '{sub}' must be coded using ISO 3166-2:RO (e.g. 'RO-B', 'RO-AB'..'RO-VN').",
+            "Dacă țara {role} este RO, subdiviziunea țării ({bt_sub}) '{sub}' trebuie codificată conform listei ISO 3166-2:RO (ex. 'RO-B', 'RO-AB'..'RO-VN')."
+        );
+        let hint = County::lookup_fuzzy(sub).map_or_else(
+            || {
+                acc.tr(
+                    "Use an ISO 3166-2:RO code such as 'RO-B', 'RO-CJ', 'RO-TM'.",
+                    "Utilizați un cod ISO 3166-2:RO valid (ex. 'RO-B', 'RO-CJ', 'RO-TM').",
+                )
+                .to_owned()
+            },
+            |c| {
+                let (code, name) = (c.code(), c.name_ro());
+                tr_fmt!(
+                    acc,
+                    "Did you mean '{code}' ({name})?",
+                    "Înlocuiți valoarea cu '{code}' ({name})."
+                )
+            },
+        );
         acc.record(
             StageFinding::fatal(spec.county_code, msg)
                 .sub_id(spec.county_sub)
@@ -306,32 +306,30 @@ fn check_ro_county_and_sector(addr: &PostalAddress, spec: &PartyRoleSpec, acc: &
         if BucharestSector::from_code(city).is_some() {
             acc.pass();
         } else {
-            let (role_en, role_ro_gen, bt_city) = (spec.role_en, spec.role_ro_gen, spec.bt_city);
-            let fuzzy = BucharestSector::normalize_fuzzy(city);
-            let (msg, hint) = match acc.locale() {
-                Locale::En => (
-                    format!(
-                        "When {role_en} country is RO and subdivision is RO-B (Bucharest), city ({bt_city}) must be coded as SECTOR1..SECTOR6 (found '{city}')."
-                    ),
-                    fuzzy.map_or_else(
-                        || {
-                            "For Bucharest (RO-B), set CityName to one of SECTOR1, SECTOR2, SECTOR3, SECTOR4, SECTOR5, SECTOR6.".to_owned()
-                        },
-                        |s| format!("Replace '{city}' with exact uppercase '{}'.", s.code()),
-                    ),
-                ),
-                Locale::Ro => (
-                    format!(
-                        "Dacă țara {role_ro_gen} este RO și subdiviziunea este RO-B (București), localitatea ({bt_city}) trebuie codificată ca SECTOR1..SECTOR6 (găsit: '{city}')."
-                    ),
-                    fuzzy.map_or_else(
-                        || {
-                            "Pentru Municipiul București (RO-B), setați CityName la SECTOR1, SECTOR2, SECTOR3, SECTOR4, SECTOR5 sau SECTOR6.".to_owned()
-                        },
-                        |s| format!("Înlocuiți '{city}' cu valoarea exactă '{}'.", s.code()),
-                    ),
-                ),
-            };
+            let role = acc.tr(spec.role_en, spec.role_ro_gen);
+            let bt_city = spec.bt_city;
+            let msg = tr_fmt!(
+                acc,
+                "When {role} country is RO and subdivision is RO-B (Bucharest), city ({bt_city}) must be coded as SECTOR1..SECTOR6 (found '{city}').",
+                "Dacă țara {role} este RO și subdiviziunea este RO-B (București), localitatea ({bt_city}) trebuie codificată ca SECTOR1..SECTOR6 (găsit: '{city}')."
+            );
+            let hint = BucharestSector::normalize_fuzzy(city).map_or_else(
+                || {
+                    acc.tr(
+                        "For Bucharest (RO-B), set CityName to one of SECTOR1, SECTOR2, SECTOR3, SECTOR4, SECTOR5, SECTOR6.",
+                        "Pentru Municipiul București (RO-B), setați CityName la SECTOR1, SECTOR2, SECTOR3, SECTOR4, SECTOR5 sau SECTOR6.",
+                    )
+                    .to_owned()
+                },
+                |s| {
+                    let code = s.code();
+                    tr_fmt!(
+                        acc,
+                        "Replace '{city}' with exact uppercase '{code}'.",
+                        "Înlocuiți '{city}' cu valoarea exactă '{code}'."
+                    )
+                },
+            );
             acc.record(
                 StageFinding::fatal(spec.sector_code, msg)
                     .sub_id(spec.sector_sub)

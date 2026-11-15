@@ -16,10 +16,10 @@ use en16931::Invoice;
 use en16931::invoice::PostalAddress;
 use roxmltree::{Document, Node};
 
-use crate::stage_acc::{StageAcc, StageFinding};
+use crate::stage_acc::{StageAcc, StageFinding, tr_fmt};
 use crate::types::{
-    CIUS_RO_CUSTOMIZATION_ID, EngineId, EngineReport, Locale, ValidateOptions, Violation,
-    XmlDecodeError, XmlSyntax,
+    CIUS_RO_CUSTOMIZATION_ID, EngineId, EngineReport, ValidateOptions, Violation, XmlDecodeError,
+    XmlSyntax,
 };
 
 pub(crate) const ENGINE_ID: EngineId = EngineId::AnafCiusRo;
@@ -121,13 +121,18 @@ pub fn evaluate_cius_ro_rules(xml_bytes: &[u8], opts: &ValidateOptions) -> BrRoO
     if !opts.run_cius_ro_rules && !opts.run_checksums {
         return skipped_outcome("Disabled by ValidateOptions", None, None);
     }
-    let Ok(xml_str) = decode_xml_bytes(xml_bytes) else {
-        return skipped_outcome("XML byte decoding failed", None, None);
-    };
-    let Ok(doc) = Document::parse(&xml_str) else {
-        return skipped_outcome("XML is not well-formed", None, None);
-    };
-    evaluate_parsed(xml_bytes, &doc, None, opts)
+    let decoded = decode_xml_bytes(xml_bytes);
+    let roxml_res = decoded.as_deref().ok().map(Document::parse);
+    if let Some(Ok(doc)) = &roxml_res {
+        let (syntax, customization_id) = detect_root_syntax_and_bt24(doc.root_element());
+        evaluate_parsed(xml_bytes, doc, syntax, customization_id, None, true, opts)
+    } else {
+        failed_unparsed(
+            decoded.as_deref(),
+            roxml_res.as_ref().map(Result::as_ref),
+            opts,
+        )
+    }
 }
 
 pub(crate) fn skipped_for_unparsed(opts: &ValidateOptions) -> BrRoOutcome {
@@ -139,103 +144,196 @@ pub(crate) fn skipped_for_unparsed(opts: &ValidateOptions) -> BrRoOutcome {
     skipped_outcome(reason, None, None)
 }
 
+pub(crate) fn failed_unparsed(
+    xml_res: Result<&str, &XmlDecodeError>,
+    roxml_res: Option<Result<&Document<'_>, &roxmltree::Error>>,
+    opts: &ValidateOptions,
+) -> BrRoOutcome {
+    let mut acc = StageAcc::new(ENGINE_ID, ENGINE_NAME, ENGINE_VERSION, opts.locale);
+    match xml_res {
+        Err(err) => {
+            acc.record(
+                StageFinding::fatal("BR-RO-XML-ENCODING", err.message(acc.locale()))
+                    .term("W3C XML 1.0")
+                    .location("Byte offset 0"),
+            );
+        }
+        Ok(_) => match roxml_res {
+            Some(Err(roxmltree::Error::DtdDetected)) => {
+                let msg = acc
+                    .tr(
+                        "XML DOCTYPE / ENTITY declarations are prohibited (XXE defense).",
+                        "Declarațiile XML DOCTYPE / ENTITY sunt interzise (protecție XXE).",
+                    )
+                    .to_owned();
+                acc.record(
+                    StageFinding::fatal("BR-RO-XXE-PROHIBITED", msg)
+                        .term("W3C XML 1.0 / OWASP XXE")
+                        .location("XML Prologue"),
+                );
+            }
+            Some(Err(err)) => {
+                let msg = tr_fmt!(
+                    acc,
+                    "XML document is not well-formed: {err}",
+                    "Documentul XML nu este bine format: {err}"
+                );
+                acc.record(StageFinding::fatal("BR-RO-XML-SYNTAX", msg).term("W3C XML 1.0"));
+            }
+            _ => {
+                let msg = acc
+                    .tr(
+                        "XML document could not be parsed.",
+                        "Documentul XML nu a putut fi analizat.",
+                    )
+                    .to_owned();
+                acc.record(StageFinding::fatal("BR-RO-XML-SYNTAX", msg).term("W3C XML 1.0"));
+            }
+        },
+    }
+    finish_outcome(acc, None, None)
+}
+
 pub(crate) fn evaluate_parsed(
     xml_bytes: &[u8],
     doc: &Document<'_>,
+    syntax: Option<XmlSyntax>,
+    customization_id: Option<String>,
     pre_read: Option<Invoice>,
+    report_unparseable: bool,
     opts: &ValidateOptions,
 ) -> BrRoOutcome {
     if !opts.run_cius_ro_rules && !opts.run_checksums {
-        return skipped_outcome("Disabled by ValidateOptions", None, None);
+        return skipped_outcome("Disabled by ValidateOptions", syntax, customization_id);
     }
     let root = doc.root_element();
-    let (syntax, customization_id) = detect_root_syntax_and_bt24(root);
     let Some(syntax_kind) = syntax else {
-        return skipped_outcome("Unrecognized XML root element", None, customization_id);
+        if !report_unparseable {
+            return skipped_outcome("Unrecognized XML root element", None, customization_id);
+        }
+        let mut acc = StageAcc::new(ENGINE_ID, ENGINE_NAME, ENGINE_VERSION, opts.locale);
+        let root_name = root.tag_name().name();
+        let msg = tr_fmt!(
+            acc,
+            "Root XML element '<{root_name}>' is neither OASIS UBL 2.1 Invoice/CreditNote nor UN/CEFACT CII D16B CrossIndustryInvoice.",
+            "Elementul rădăcină XML '<{root_name}>' nu este o factură OASIS UBL 2.1 Invoice/CreditNote sau UN/CEFACT CII D16B CrossIndustryInvoice."
+        );
+        acc.record(
+            StageFinding::fatal("BR-RO-UNKNOWN-ROOT", msg)
+                .term("XML Root Element")
+                .location(root_name),
+        );
+        return finish_outcome(acc, None, customization_id);
     };
 
-    let Some(inv) = pre_read.or_else(|| en16931_formats::read(xml_bytes).ok().map(|r| r.invoice))
-    else {
-        return skipped_outcome(
-            "EN 16931 reader could not load document",
-            syntax,
-            customization_id,
-        );
+    let inv = match pre_read {
+        Some(inv) => inv,
+        None => match en16931_formats::read(xml_bytes) {
+            Ok(read_out) => read_out.invoice,
+            Err(err) if report_unparseable => {
+                let mut acc = StageAcc::new(ENGINE_ID, ENGINE_NAME, ENGINE_VERSION, opts.locale);
+                let msg = tr_fmt!(
+                    acc,
+                    "EN 16931 invoice model could not be extracted from XML: {err}",
+                    "Modelul semantic EN 16931 nu a putut fi extras din documentul XML: {err}"
+                );
+                acc.record(
+                    StageFinding::fatal("BR-RO-XML-UNREADABLE", msg).term(syntax_kind.label()),
+                );
+                return finish_outcome(acc, syntax, customization_id);
+            }
+            Err(_) => {
+                return skipped_outcome(
+                    "EN 16931 reader could not load document",
+                    syntax,
+                    customization_id,
+                );
+            }
+        },
     };
 
     let mut acc = StageAcc::new(ENGINE_ID, ENGINE_NAME, ENGINE_VERSION, opts.locale);
 
-    if opts.run_cius_ro_rules {
-        let spec = customization_id
-            .as_deref()
-            .or(inv.specification_id.as_deref())
-            .unwrap_or("");
-        let mentions_ro = contains_ascii_case_insensitive(spec, "cius-ro")
-            || contains_ascii_case_insensitive(spec, "efactura.mfinante.ro");
-        let evaluate_national_rules = if spec == CIUS_RO_CUSTOMIZATION_ID {
-            acc.pass();
-            true
-        } else if opts.strict_cius_ro_customization || mentions_ro {
-            let (msg, hint) = match acc.locale() {
-                Locale::En => (
-                    format!(
-                        "Specification identifier (BT-24) must equal '{CIUS_RO_CUSTOMIZATION_ID}' (found '{spec}')."
-                    ),
-                    format!("Set CustomizationID (BT-24) to '{CIUS_RO_CUSTOMIZATION_ID}'."),
-                ),
-                Locale::Ro => (
-                    format!(
-                        "Identificatorul specificației (BT-24) trebuie să corespundă exact valorii '{CIUS_RO_CUSTOMIZATION_ID}' (găsit: '{spec}')."
-                    ),
-                    format!("Setați CustomizationID (BT-24) la '{CIUS_RO_CUSTOMIZATION_ID}'."),
-                ),
-            };
-            acc.record(
-                StageFinding::fatal("BR-RO-001", msg)
-                    .sub_id("BR-RO-001")
-                    .term("BT-24")
-                    .location("BT-24")
-                    .expected(CIUS_RO_CUSTOMIZATION_ID)
-                    .actual(spec.to_owned())
-                    .hint(hint),
-            );
-            true
-        } else {
-            if checksums::has_romanian_context(&inv) {
-                let msg = match acc.locale() {
-                    Locale::En => format!(
-                        "Romanian-context invoice does not declare ANAF CIUS-RO 1.0.1 CustomizationID '{CIUS_RO_CUSTOMIZATION_ID}'."
-                    ),
-                    Locale::Ro => format!(
-                        "Factura cu context românesc nu declară identificatorul ANAF CIUS-RO 1.0.1 '{CIUS_RO_CUSTOMIZATION_ID}'."
-                    ),
-                };
-                acc.record(
-                    StageFinding::warning("BR-RO-001", msg)
-                        .sub_id("BR-RO-001")
-                        .term("BT-24")
-                        .location("BT-24")
-                        .expected(CIUS_RO_CUSTOMIZATION_ID)
-                        .actual(spec.to_owned()),
-                );
-            }
-            false
-        };
-
-        if evaluate_national_rules {
-            self::core::check_core_rules(&inv, root, syntax_kind, opts, &mut acc);
-            dates::check_dates_lexical(root, syntax_kind, &mut acc);
-            self::core::check_cardinality(&inv, syntax_kind, &mut acc);
-            lengths::check_lengths(&inv, syntax_kind, &mut acc);
-            decimals::check_decimals_lexical(root, syntax_kind, &inv, &mut acc);
-            parties::check_parties_and_addresses(&inv, &mut acc);
-        }
+    if opts.run_cius_ro_rules
+        && should_evaluate_national_rules(&inv, customization_id.as_deref(), opts, &mut acc)
+    {
+        self::core::check_core_rules(&inv, root, syntax_kind, opts, &mut acc);
+        dates::check_dates_lexical(root, syntax_kind, &mut acc);
+        self::core::check_cardinality(&inv, syntax_kind, &mut acc);
+        lengths::check_lengths(&inv, syntax_kind, &mut acc);
+        decimals::check_decimals_lexical(root, syntax_kind, &inv, &mut acc);
+        parties::check_parties_and_addresses(&inv, &mut acc);
     }
 
     if opts.run_checksums {
         checksums::check_all_checksums(&inv, &mut acc);
     }
 
+    finish_outcome(acc, syntax, customization_id)
+}
+
+fn should_evaluate_national_rules(
+    inv: &Invoice,
+    customization_id: Option<&str>,
+    opts: &ValidateOptions,
+    acc: &mut StageAcc,
+) -> bool {
+    let spec = customization_id
+        .or(inv.specification_id.as_deref())
+        .unwrap_or("");
+    if spec == CIUS_RO_CUSTOMIZATION_ID {
+        acc.pass();
+        return true;
+    }
+
+    let mentions_ro = contains_ascii_case_insensitive(spec, "cius-ro")
+        || contains_ascii_case_insensitive(spec, "efactura.mfinante.ro");
+    if opts.strict_cius_ro_customization || mentions_ro {
+        let msg = tr_fmt!(
+            acc,
+            "Specification identifier (BT-24) must equal '{CIUS_RO_CUSTOMIZATION_ID}' (found '{spec}').",
+            "Identificatorul specificației (BT-24) trebuie să corespundă exact valorii '{CIUS_RO_CUSTOMIZATION_ID}' (găsit: '{spec}')."
+        );
+        let hint = tr_fmt!(
+            acc,
+            "Set CustomizationID (BT-24) to '{CIUS_RO_CUSTOMIZATION_ID}'.",
+            "Setați CustomizationID (BT-24) la '{CIUS_RO_CUSTOMIZATION_ID}'."
+        );
+        acc.record(
+            StageFinding::fatal("BR-RO-001", msg)
+                .sub_id("BR-RO-001")
+                .term("BT-24")
+                .location("BT-24")
+                .expected(CIUS_RO_CUSTOMIZATION_ID)
+                .actual(spec.to_owned())
+                .hint(hint),
+        );
+        return true;
+    }
+
+    if checksums::has_romanian_context(inv) {
+        let msg = tr_fmt!(
+            acc,
+            "Romanian-context invoice does not declare ANAF CIUS-RO 1.0.1 CustomizationID '{CIUS_RO_CUSTOMIZATION_ID}'.",
+            "Factura cu context românesc nu declară identificatorul ANAF CIUS-RO 1.0.1 '{CIUS_RO_CUSTOMIZATION_ID}'."
+        );
+        acc.record(
+            StageFinding::warning("BR-RO-001", msg)
+                .sub_id("BR-RO-001")
+                .term("BT-24")
+                .location("BT-24")
+                .expected(CIUS_RO_CUSTOMIZATION_ID)
+                .actual(spec.to_owned()),
+        );
+    }
+    false
+}
+
+fn finish_outcome(
+    acc: StageAcc,
+    syntax: Option<XmlSyntax>,
+    customization_id: Option<String>,
+) -> BrRoOutcome {
     let (report, violations) = acc.into_report();
     BrRoOutcome {
         report,

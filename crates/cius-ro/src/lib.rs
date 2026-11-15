@@ -114,11 +114,14 @@ pub use rules::{RULES, RuleDescriptor, RuleView, find_rule, render_rules_markdow
 pub use semantic::render_svrl_report;
 pub use types::{
     CIUS_RO_CUSTOMIZATION_ID, ContainerKind, DocumentIdentity, EngineId, EngineReport,
-    EngineStatus, Locale, LocalizedDisplay, ParseLocaleError, Recommendation, RuleCategory,
-    Severity, ValidateOptions, ValidationReport, Violation, XmlDecodeError, XmlSyntax,
+    EngineStatus, Locale, LocalizedDisplay, LocalizedFmt, ParseLocaleError, Recommendation,
+    RuleCategory, Severity, ValidateOptions, ValidationReport, Violation, XmlDecodeError,
+    XmlSyntax,
 };
 #[cfg(feature = "xsd")]
 pub use xsd::{XsdInitError, warm_xsd_validators};
+
+use stage_acc::{StageFinding, tr};
 
 const PDFA_ENGINE_ID: EngineId = EngineId::Pdfa3Iso19005;
 const PDFA_ENGINE_NAME: &str = "ISO 19005-3 (PDF/A-3) & efactura.xml Inspector";
@@ -130,35 +133,22 @@ const PDFA_ENGINE_VER: &str = "ISO 19005-3:2012";
 #[must_use]
 pub fn validate_bytes(bytes: &[u8], opts: &ValidateOptions) -> ValidationReport {
     if bytes.is_empty() {
-        let (msg, expected, actual) = match opts.locale {
-            Locale::En => (
+        let violation = StageFinding::fatal(
+            "INPUT-EMPTY",
+            tr(
+                opts.locale,
                 "Input payload is empty (0 bytes).",
-                "XML e-invoice or PDF/A-3 hybrid invoice",
-                "0 bytes",
-            ),
-            Locale::Ro => (
                 "Fișierul de intrare este gol (0 octeți).",
-                "Factură electronică XML sau container hibrid PDF/A-3",
-                "0 octeți",
             ),
-        };
-        return reject_report(
-            ContainerKind::Xml,
-            opts,
-            Vec::new(),
-            vec![Violation {
-                code: "INPUT-EMPTY".to_string(),
-                rule_sub_id: None,
-                engine: EngineId::Gateway,
-                severity: Severity::Fatal,
-                business_term: None,
-                message: msg.to_string(),
-                location: None,
-                expected: Some(expected.to_string()),
-                actual: Some(actual.to_string()),
-                hint: None,
-            }],
-        );
+        )
+        .expected(tr(
+            opts.locale,
+            "XML e-invoice or PDF/A-3 hybrid invoice",
+            "Factură electronică XML sau container hibrid PDF/A-3",
+        ))
+        .actual(tr(opts.locale, "0 bytes", "0 octeți"))
+        .into_violation(EngineId::Gateway);
+        return reject_report(ContainerKind::Xml, opts, Vec::new(), vec![violation]);
     }
 
     if bytes[..bytes.len().min(1024)]
@@ -208,12 +198,15 @@ fn validate_pdf_container(bytes: &[u8], opts: &ValidateOptions) -> ValidationRep
     #[cfg(not(feature = "pdfa3"))]
     {
         let _ = bytes;
-        let msg = match opts.locale {
-            Locale::En => "Input is a PDF container, but crate feature 'pdfa3' is disabled.",
-            Locale::Ro => {
-                "Documentul este de tip PDF, dar funcționalitatea 'pdfa3' nu este activată."
-            }
-        };
+        let violation = StageFinding::fatal(
+            "PDFA3-FEATURE-DISABLED",
+            tr(
+                opts.locale,
+                "Input is a PDF container, but crate feature 'pdfa3' is disabled.",
+                "Documentul este de tip PDF, dar funcționalitatea 'pdfa3' nu este activată.",
+            ),
+        )
+        .into_violation(PDFA_ENGINE_ID);
         reject_report(
             ContainerKind::PdfA3,
             opts,
@@ -223,18 +216,7 @@ fn validate_pdf_container(bytes: &[u8], opts: &ValidateOptions) -> ValidationRep
                 PDFA_ENGINE_VER,
                 "Feature 'pdfa3' disabled at compile time",
             )],
-            vec![Violation {
-                code: "PDFA3-FEATURE-DISABLED".to_string(),
-                rule_sub_id: None,
-                engine: PDFA_ENGINE_ID,
-                severity: Severity::Fatal,
-                business_term: None,
-                message: msg.to_string(),
-                location: None,
-                expected: None,
-                actual: None,
-                hint: None,
-            }],
+            vec![violation],
         )
     }
 }
@@ -291,21 +273,25 @@ fn validate_xml_internal(
 
     let decoded = br_ro::decode_xml_bytes(xml_bytes);
     let roxml_res = decoded.as_deref().ok().map(roxmltree::Document::parse);
-    let dtd_detected = matches!(roxml_res, Some(Err(roxmltree::Error::DtdDetected)));
-    let parsed_doc = roxml_res.and_then(Result::ok);
-    let (mut syntax, mut customization_id) = parsed_doc.as_ref().map_or((None, None), |d| {
+    let parsed_doc = roxml_res.as_ref().and_then(|r| r.as_ref().ok());
+    let (mut syntax, mut customization_id) = parsed_doc.map_or((None, None), |d| {
         br_ro::detect_root_syntax_and_bt24(d.root_element())
     });
 
     #[cfg(feature = "xsd")]
     {
-        let xsd_out = xsd::evaluate_xsd(decoded.as_deref(), dtd_detected, syntax, opts);
+        let xsd_out = xsd::evaluate_xsd(
+            decoded.as_deref(),
+            roxml_res.as_ref().map(Result::as_ref),
+            syntax,
+            opts,
+        );
         engines.push(xsd_out.report);
         violations.extend(xsd_out.violations);
     }
     #[cfg(not(feature = "xsd"))]
     {
-        let _ = (&decoded, dtd_detected);
+        let _ = &decoded;
         engines.push(EngineReport::skipped(
             EngineId::XsdSchema,
             "Official W3C XSD 1.1 Grammar Validator",
@@ -320,12 +306,28 @@ fn validate_xml_internal(
     engines.push(en_out.report);
     violations.extend(en_out.violations);
 
-    let ro_out = parsed_doc.as_ref().map_or_else(
-        || br_ro::skipped_for_unparsed(opts),
-        |doc| br_ro::evaluate_parsed(xml_bytes, doc, pre_invoice, opts),
-    );
+    let prior_fatal = violations.iter().any(|v| v.severity == Severity::Fatal);
+    let ro_out = match parsed_doc {
+        Some(doc) => br_ro::evaluate_parsed(
+            xml_bytes,
+            doc,
+            syntax,
+            customization_id.take(),
+            pre_invoice,
+            !prior_fatal,
+            opts,
+        ),
+        None if prior_fatal || (!opts.run_cius_ro_rules && !opts.run_checksums) => {
+            br_ro::skipped_for_unparsed(opts)
+        }
+        None => br_ro::failed_unparsed(
+            decoded.as_deref(),
+            roxml_res.as_ref().map(Result::as_ref),
+            opts,
+        ),
+    };
     syntax = syntax.or(ro_out.syntax);
-    customization_id = customization_id.or(ro_out.customization_id);
+    customization_id = ro_out.customization_id;
     engines.push(ro_out.report);
     violations.extend(ro_out.violations);
 

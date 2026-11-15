@@ -4,8 +4,8 @@
 use en16931::invoice::{InvoiceLine, InvoiceNote, ItemAttribute, PaymentMeans, SupportingDocument};
 use en16931::{DocumentReference, Identifier, Invoice};
 
-use crate::stage_acc::StageAcc;
-use crate::types::{Locale, XmlSyntax};
+use crate::stage_acc::{StageAcc, tr_fmt};
+use crate::types::XmlSyntax;
 
 /// Static descriptor for a single normalized character-length rule (`string-length(normalize-space(.)) <= max_len`).
 struct LenRule<T: ?Sized> {
@@ -254,14 +254,11 @@ fn check_char_len(len: usize, max: usize, code: &str, sub: &str, bt: &str, acc: 
     if len <= max {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Field {bt} exceeds maximum normalized length of {max} characters (found {len})."
-            ),
-            Locale::Ro => format!(
-                "Câmpul {bt} depășește lungimea maximă permisă de {max} caractere (găsit: {len})."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Field {bt} exceeds maximum normalized length of {max} characters (found {len}).",
+            "Câmpul {bt} depășește lungimea maximă permisă de {max} caractere (găsit: {len})."
+        );
         acc.fatal_sub(code, sub, bt, bt, msg);
     }
 }

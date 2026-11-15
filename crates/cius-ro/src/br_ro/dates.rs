@@ -5,8 +5,8 @@ use en16931::Date;
 use roxmltree::Node;
 
 use super::{CII_NS, CII_RAM_NS, CII_UDT_NS, UBL_CAC_NS, UBL_CBC_NS, child_elem, children_named};
-use crate::stage_acc::StageAcc;
-use crate::types::{Locale, XmlSyntax};
+use crate::stage_acc::{StageAcc, tr_fmt};
+use crate::types::XmlSyntax;
 
 const UBL_HEADER_DATES: &[(&str, &str, &str, &str)] = &[
     ("IssueDate", "BR-RO-DT001", "BT-2", "cbc:IssueDate"),
@@ -34,14 +34,11 @@ fn check_ubl_node_date(
     if raw.len() == 10 && Date::parse(raw).is_ok() {
         acc.pass();
     } else {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "Date ({bt}) '{raw}' must strictly follow YYYY-MM-DD without timezone offset."
-            ),
-            Locale::Ro => format!(
-                "Data ({bt}) '{raw}' trebuie să respecte strict formatul AAAA-LL-ZZ fără fus orar."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "Date ({bt}) '{raw}' must strictly follow YYYY-MM-DD without timezone offset.",
+            "Data ({bt}) '{raw}' trebuie să respecte strict formatul AAAA-LL-ZZ fără fus orar."
+        );
         acc.fatal_sub(code, sub, bt, loc, msg);
     }
 }
@@ -146,26 +143,20 @@ fn check_cii_dt(
             acc.pass();
         } else {
             let fmt_disp = fmt.unwrap_or("");
-            let msg = match acc.locale() {
-                Locale::En => format!(
-                    "CII Date ({bt}) '{raw}' (<udt:{leaf}>, format='{fmt_disp}') must use <udt:{expected_leaf} format='102'> and valid YYYYMMDD."
-                ),
-                Locale::Ro => format!(
-                    "Data CII ({bt}) '{raw}' (<udt:{leaf}>, format='{fmt_disp}') trebuie să aibă <udt:{expected_leaf} format='102'> și o dată validă AAAALLZZ."
-                ),
-            };
+            let msg = tr_fmt!(
+                acc,
+                "CII Date ({bt}) '{raw}' (<udt:{leaf}>, format='{fmt_disp}') must use <udt:{expected_leaf} format='102'> and valid YYYYMMDD.",
+                "Data CII ({bt}) '{raw}' (<udt:{leaf}>, format='{fmt_disp}') trebuie să aibă <udt:{expected_leaf} format='102'> și o dată validă AAAALLZZ."
+            );
             acc.fatal_sub(code, code, bt, loc, msg);
         }
     }
     if !found && parent.children().any(|n| n.is_element()) {
-        let msg = match acc.locale() {
-            Locale::En => format!(
-                "CII Date ({bt}) must contain <udt:{expected_leaf} format='102'> formatted as YYYYMMDD."
-            ),
-            Locale::Ro => format!(
-                "Data CII ({bt}) trebuie să conțină <udt:{expected_leaf} format='102'> în format AAAALLZZ."
-            ),
-        };
+        let msg = tr_fmt!(
+            acc,
+            "CII Date ({bt}) must contain <udt:{expected_leaf} format='102'> formatted as YYYYMMDD.",
+            "Data CII ({bt}) trebuie să conțină <udt:{expected_leaf} format='102'> în format AAAALLZZ."
+        );
         acc.fatal_sub(code, code, bt, loc, msg);
     }
 }
