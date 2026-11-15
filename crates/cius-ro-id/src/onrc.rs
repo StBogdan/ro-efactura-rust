@@ -175,13 +175,20 @@ impl Onrc {
             .take(crate::MAX_ID_SCAN_CHARS)
             .filter(|c| !c.is_whitespace())
         {
-            if len == 0 && (!ch.is_ascii() || OnrcRegister::from_ascii(ch as u8).is_none()) {
+            let Ok(b) = u8::try_from(ch) else {
+                return Err(if len == 0 {
+                    OnrcError::InvalidRegisterPrefix
+                } else {
+                    OnrcError::InvalidFormat
+                });
+            };
+            if len == 0 && OnrcRegister::from_ascii(b).is_none() {
                 return Err(OnrcError::InvalidRegisterPrefix);
             }
-            if !ch.is_ascii() || len >= buf.len() {
+            if len >= buf.len() {
                 return Err(OnrcError::InvalidFormat);
             }
-            buf[len] = ch as u8;
+            buf[len] = b;
             len += 1;
         }
         if raw.len() > crate::MAX_ID_SCAN_CHARS {
@@ -340,9 +347,9 @@ pub fn is_onrc_candidate(raw: &str) -> bool {
     let (Some(c0), Some(c1)) = (non_ws.next(), non_ws.next()) else {
         return false;
     };
-    c0.is_ascii()
-        && OnrcRegister::from_ascii(c0 as u8).is_some()
-        && (c1.is_ascii_digit() || c1 == '/')
+    u8::try_from(c0).ok().is_some_and(|b| {
+        OnrcRegister::from_ascii(b).is_some() && (c1.is_ascii_digit() || c1 == '/')
+    })
 }
 
 fn parse_classic_year_or_date(segment: &str) -> Result<&str, OnrcError> {

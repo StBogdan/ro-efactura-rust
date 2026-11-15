@@ -392,7 +392,7 @@ fn decode_pdf_name(raw: &[u8]) -> Vec<u8> {
         if raw[k] == b'#'
             && let Some(byte) = raw
                 .get(k + 1..k + 3)
-                .and_then(|h| std::str::from_utf8(h).ok())
+                .and_then(|h| core::str::from_utf8(h).ok())
                 .and_then(|h| u8::from_str_radix(h, 16).ok())
         {
             out.push(byte);
@@ -418,7 +418,7 @@ fn parse_int(pdf: &[u8], i: &mut usize) -> Option<i64> {
     if k == digits {
         return None;
     }
-    let text = std::str::from_utf8(&pdf[start..k]).ok()?;
+    let text = core::str::from_utf8(&pdf[start..k]).ok()?;
     *i = k;
     Some(text.parse::<i64>().unwrap_or(if text.starts_with('-') {
         i64::MIN

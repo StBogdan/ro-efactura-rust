@@ -66,10 +66,10 @@ pub(crate) fn evaluate_en16931(
     let mut acc = StageAcc::new(ENGINE_ID, ENGINE_NAME, ENGINE_VERSION, opts.locale);
     collect_en_report(&received.report_declared, &mut acc, None);
     if let Some(req_rep) = &received.report_required {
-        let mut seen: HashSet<(String, String)> = acc
+        let mut seen: HashSet<(String, Option<String>)> = acc
             .violations()
             .iter()
-            .map(|v| (v.code.clone(), v.location.clone().unwrap_or_default()))
+            .map(|v| (v.code.clone(), v.location.clone()))
             .collect();
         collect_en_report(req_rep, &mut acc, Some(&mut seen));
     }
@@ -140,7 +140,7 @@ fn check_bt24_declaration(
 fn collect_en_report(
     report: &Report,
     acc: &mut StageAcc,
-    mut seen: Option<&mut HashSet<(String, String)>>,
+    mut seen: Option<&mut HashSet<(String, Option<String>)>>,
 ) {
     for entry in report.entries() {
         let sev = match entry.level() {
@@ -153,7 +153,7 @@ fn collect_en_report(
             .clone()
             .unwrap_or_else(|| format!("EN16931-{}", entry.kind.as_str().to_ascii_uppercase()));
         if let Some(s) = seen.as_deref_mut()
-            && !s.insert((code.clone(), entry.path.clone()))
+            && !s.insert((code.clone(), Some(entry.path.clone())))
         {
             continue;
         }
@@ -174,7 +174,7 @@ fn collect_en_report(
         for finding in sem_rep.findings() {
             let loc = finding.path.to_string();
             if let Some(s) = seen.as_deref_mut()
-                && !s.insert((finding.rule.clone(), loc.clone()))
+                && !s.insert((finding.rule.clone(), Some(loc.clone())))
             {
                 continue;
             }

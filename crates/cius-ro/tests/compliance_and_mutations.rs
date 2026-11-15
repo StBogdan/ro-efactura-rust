@@ -141,10 +141,7 @@ fn b2c_cnp_and_anaf_oug_69_2024_placeholder_compliance() {
         )
         .replace("J12/890/2020", "0000000000000");
 
-    let opts = ValidateOptions {
-        deny_warnings: true,
-        ..ValidateOptions::default()
-    };
+    let opts = ValidateOptions::new().deny_warnings(true);
     let rep_zeros = validate_bytes(b2c_zeros.as_bytes(), &opts);
     assert!(
         rep_zeros.is_valid && rep_zeros.violations.is_empty(),
@@ -241,10 +238,7 @@ fn faulty_samples_emit_exact_expected_codes() {
 
     let rep_lenient = validate_bytes(
         &faulty_07,
-        &ValidateOptions {
-            strict_cius_ro_customization: false,
-            ..ValidateOptions::default()
-        },
+        &ValidateOptions::new().strict_cius_ro_customization(false),
     );
     assert!(!rep_lenient.is_valid); // Still invalid due to EN 16931 math / missing fields
     assert!(
@@ -611,19 +605,11 @@ fn bilingual_ro_vs_en_and_svrl_report_generation() {
 
     let rep_en = validate_bytes(
         &faulty,
-        &ValidateOptions {
-            locale: Locale::En,
-            include_svrl: true,
-            ..ValidateOptions::default()
-        },
+        &ValidateOptions::with_locale(Locale::En).include_svrl(true),
     );
     let rep_ro = validate_bytes(
         &faulty,
-        &ValidateOptions {
-            locale: Locale::Ro,
-            include_svrl: true,
-            ..ValidateOptions::default()
-        },
+        &ValidateOptions::with_locale(Locale::Ro).include_svrl(true),
     );
 
     let v100_en = rep_en

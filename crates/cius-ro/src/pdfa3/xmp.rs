@@ -24,7 +24,7 @@ pub(super) fn check_xmp_metadata(
     acc: &mut StageAcc,
 ) -> Option<String> {
     let (loc, raw_xmp) = decode_xmp_stream(doc, catalog, budget, acc)?;
-    let Ok(xmp_str) = std::str::from_utf8(&raw_xmp) else {
+    let Ok(xmp_str) = core::str::from_utf8(&raw_xmp) else {
         acc.fail_clause(
             "PDFA3-6.6.2-METADATA-UTF8",
             "ISO 19005-3:6.6.2.1",

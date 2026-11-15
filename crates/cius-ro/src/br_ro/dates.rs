@@ -274,7 +274,7 @@ fn is_valid_cii_date_102(raw: &str) -> bool {
         return false;
     }
     let iso_buf = [y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1];
-    std::str::from_utf8(&iso_buf)
+    core::str::from_utf8(&iso_buf)
         .ok()
         .is_some_and(|s| Date::parse(s).is_ok())
 }

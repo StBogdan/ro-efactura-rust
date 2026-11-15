@@ -40,6 +40,47 @@ macro_rules! impl_str_enum {
     };
 }
 
+macro_rules! impl_localized_display {
+    ($err:ty) => {
+        impl $err {
+            /// Returns a zero-allocation [`core::fmt::Display`] adapter formatted in `locale`.
+            #[must_use]
+            pub const fn display(
+                &self,
+                locale: $crate::types::Locale,
+            ) -> $crate::types::LocalizedDisplay<'_, Self> {
+                $crate::types::LocalizedDisplay::new(self, locale)
+            }
+
+            /// Formats a localized diagnostic message in `locale`.
+            #[must_use]
+            pub fn message(&self, locale: $crate::types::Locale) -> String {
+                ToString::to_string(&self.display(locale))
+            }
+        }
+
+        impl ::core::fmt::Display for $err {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                $crate::types::LocalizedFmt::fmt_locale(self, f, $crate::types::Locale::En)
+            }
+        }
+    };
+}
+
+#[cfg(feature = "pdfa3")]
+macro_rules! impl_localized_error {
+    ($err:ty) => {
+        crate::types::impl_localized_display!($err);
+
+        impl ::core::error::Error for $err {}
+    };
+}
+
+#[cfg(feature = "pdfa3")]
+pub(crate) use impl_localized_display;
+#[cfg(feature = "pdfa3")]
+pub(crate) use impl_localized_error;
+
 /// Overall processing decision recommended for a validated document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -182,28 +223,10 @@ impl LocalizedFmt for XmlDecodeError {
     }
 }
 
-impl XmlDecodeError {
-    /// Returns a zero-allocation [`fmt::Display`] adapter formatted in `locale`.
-    #[must_use]
-    pub const fn display(&self, locale: Locale) -> LocalizedDisplay<'_, Self> {
-        LocalizedDisplay::new(self, locale)
-    }
+impl_localized_display!(XmlDecodeError);
 
-    /// Formats a localized diagnostic message in `locale`.
-    #[must_use]
-    pub fn message(&self, locale: Locale) -> String {
-        self.display(locale).to_string()
-    }
-}
-
-impl fmt::Display for XmlDecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fmt_locale(f, Locale::En)
-    }
-}
-
-impl std::error::Error for XmlDecodeError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl core::error::Error for XmlDecodeError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             Self::InvalidUtf8AfterBom(err) | Self::InvalidUtf8(err) => Some(err),
             Self::TruncatedUtf16 { .. } | Self::InvalidUtf16 { .. } => None,
@@ -252,6 +275,7 @@ impl_str_enum!(EngineStatus, "Uppercase wire status label (`\"PASSED\"`, `\"FAIL
 /// Detected EN 16931 XML syntax binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum XmlSyntax {
     /// OASIS UBL 2.1 `<Invoice>`.
     UblInvoice,
@@ -393,6 +417,7 @@ pub struct Violation {
 
 /// Configuration controlling how [`crate::validate_bytes`] and [`crate::validate_xml`] inspect a document.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Independent toggles for each validation stage and policy flag"

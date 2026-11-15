@@ -170,6 +170,25 @@ const COUNTY_TABLE: [(County, &str, &str, &str, &str); 42] = [
     (County::VN, "RO-VN", "VN", "Vrancea", "Vrancea"),
 ];
 
+const _: () = {
+    let mut i = 0;
+    while i < COUNTY_TABLE.len() {
+        assert!(COUNTY_TABLE[i].0 as usize == i);
+        assert!(
+            ISO_3166_2_RO_CODES[i].len() == COUNTY_TABLE[i].1.len()
+                && ISO_3166_2_RO_CODES[i].as_bytes()[3] == COUNTY_TABLE[i].1.as_bytes()[3]
+        );
+        i += 1;
+    }
+    assert!(BUCHAREST_SECTOR_CODES.len() == 6);
+    assert!(BucharestSector::Sector1 as usize == 1);
+    assert!(BucharestSector::Sector2 as usize == 2);
+    assert!(BucharestSector::Sector3 as usize == 3);
+    assert!(BucharestSector::Sector4 as usize == 4);
+    assert!(BucharestSector::Sector5 as usize == 5);
+    assert!(BucharestSector::Sector6 as usize == 6);
+};
+
 impl County {
     /// Returns all 42 [`County`] variants in `ISO 3166-2:RO` order.
     pub fn all() -> impl Iterator<Item = Self> {

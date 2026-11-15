@@ -471,7 +471,7 @@ fn decode_pdf_string(bytes: &[u8]) -> String {
             .collect();
         return String::from_utf16_lossy(&units);
     }
-    match std::str::from_utf8(bytes) {
+    match core::str::from_utf8(bytes) {
         Ok(s) => s.to_owned(),
         Err(_) => bytes.iter().map(|&b| char::from(b)).collect(),
     }

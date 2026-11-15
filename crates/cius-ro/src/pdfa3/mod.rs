@@ -14,14 +14,14 @@ mod fonts;
 mod loader;
 mod xmp;
 
-use std::fmt;
+use core::fmt;
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 pub use self::extract::extract_xml_from_pdf;
 use self::loader::{PdfLoadError, load_bounded_document};
 use crate::stage_acc::{StageAcc, StageFinding, tr_fmt};
-use crate::types::{EngineId, EngineReport, Locale, LocalizedDisplay, LocalizedFmt, Violation};
+use crate::types::{EngineId, EngineReport, Locale, LocalizedFmt, Violation, impl_localized_error};
 
 pub(crate) const ENGINE_ID: EngineId = EngineId::Pdfa3Iso19005;
 pub(crate) const ENGINE_NAME: &str = "ISO 19005-3 (PDF/A-3) & efactura.xml Inspector";
@@ -71,32 +71,13 @@ impl LocalizedFmt for PdfExtractError {
     }
 }
 
-impl PdfExtractError {
-    /// Returns a zero-allocation [`fmt::Display`] adapter formatted in `locale`.
-    #[must_use]
-    pub const fn display(&self, locale: Locale) -> LocalizedDisplay<'_, Self> {
-        LocalizedDisplay::new(self, locale)
-    }
-
-    /// Formats a localized error message in `locale`.
-    #[must_use]
-    pub fn message(&self, locale: Locale) -> String {
-        self.display(locale).to_string()
-    }
-}
-
-impl fmt::Display for PdfExtractError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fmt_locale(f, Locale::En)
-    }
-}
-
-impl std::error::Error for PdfExtractError {}
+impl_localized_error!(PdfExtractError);
 
 /// Extracted XML invoice payload from a hybrid PDF/A-3 container.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[non_exhaustive]
 pub struct ExtractedPdfXml {
     /// Embedded attachment filename (e.g. `"efactura.xml"` or `"factur-x.xml"`).
     pub filename: String,
@@ -106,6 +87,7 @@ pub struct ExtractedPdfXml {
 
 /// Outcome of inspecting a hybrid PDF/A-3 container.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct PdfInspectionOutcome {
     /// Stage execution summary (`pdfa3_iso19005`).
     pub report: EngineReport,

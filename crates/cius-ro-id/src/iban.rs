@@ -139,7 +139,12 @@ impl RoIban {
             return Err(IbanError::NotRomanianCountryCode);
         }
         if raw.len() > crate::MAX_ID_SCAN_CHARS || len != 24 {
-            return Err(IbanError::InvalidLength { len });
+            let reported = if raw.len() > crate::MAX_ID_SCAN_CHARS && len == 24 {
+                buf.len() + 1
+            } else {
+                len
+            };
+            return Err(IbanError::InvalidLength { len: reported });
         }
         if !all_ascii
             || !buf[2..4].iter().all(u8::is_ascii_digit)

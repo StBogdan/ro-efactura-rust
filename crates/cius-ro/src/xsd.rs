@@ -66,7 +66,7 @@ impl fmt::Display for XsdInitError {
     }
 }
 
-impl std::error::Error for XsdInitError {}
+impl core::error::Error for XsdInitError {}
 
 pub(crate) struct XsdOutcome {
     pub report: EngineReport,

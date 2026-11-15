@@ -206,22 +206,9 @@ impl Cnp {
     /// Returns [`CnpError`] if the input is the B2C placeholder, contains non-digits, is not 13 digits long,
     /// or fails sex-digit, calendar-date, county-code, sequence, or modulo-11 verification.
     pub fn parse(raw: &str) -> Result<Self, CnpError> {
-        if raw.len() > crate::MAX_ID_SCAN_CHARS {
-            let cap = crate::clamp_char_boundary(raw, crate::MAX_ID_SCAN_CHARS);
-            let head = raw[..cap].trim_start();
-            let mut count = 0usize;
-            for ch in head.chars().take(14) {
-                if !ch.is_ascii_digit() {
-                    return Err(CnpError::InvalidCharacters);
-                }
-                count += 1;
-            }
-            let reported = if count == 13 { 14 } else { count };
-            return Err(CnpError::InvalidLength { len: reported });
-        }
-
-        let trimmed = raw.trim();
-        if trimmed == ANAF_B2C_PLACEHOLDER {
+        let cap = crate::clamp_char_boundary(raw, crate::MAX_ID_SCAN_CHARS);
+        let trimmed = raw[..cap].trim();
+        if raw.len() <= crate::MAX_ID_SCAN_CHARS && trimmed == ANAF_B2C_PLACEHOLDER {
             return Err(CnpError::AnafB2cPlaceholder);
         }
         let mut digits = [0u8; 13];
@@ -237,6 +224,14 @@ impl Cnp {
             }
             digits[len] = ch as u8;
             len += 1;
+        }
+        if raw.len() > crate::MAX_ID_SCAN_CHARS {
+            let reported = if len == digits.len() {
+                digits.len() + 1
+            } else {
+                len
+            };
+            return Err(CnpError::InvalidLength { len: reported });
         }
         if len != digits.len() {
             return Err(CnpError::InvalidLength { len });

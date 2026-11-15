@@ -319,7 +319,10 @@ fn test_bounded_overlong_inputs_do_not_panic() {
         Err(CuiError::InvalidLength { len: 11 })
     );
     assert!(Cui::parse(&huge_spaces).is_err());
-    assert!(Cui::parse(&format!("RO45678918{huge_spaces}GARBAGE")).is_err());
+    assert_eq!(
+        Cui::parse(&format!("RO45678918{huge_spaces}GARBAGE")),
+        Err(CuiError::InvalidLength { len: 11 })
+    );
 
     assert_eq!(parse_cui_candidate(&huge_digits), None);
     assert!(matches!(
@@ -347,7 +350,10 @@ fn test_bounded_overlong_inputs_do_not_panic() {
         Err(IbanError::NotRomanianCountryCode)
     );
     assert!(RoIban::parse(&huge_spaces).is_err());
-    assert!(RoIban::parse(&format!("RO49AAAA1B31007593840000{huge_spaces}X")).is_err());
+    assert_eq!(
+        RoIban::parse(&format!("RO49AAAA1B31007593840000{huge_spaces}X")),
+        Err(IbanError::InvalidLength { len: 25 })
+    );
 
     assert!(Onrc::parse(&format!("J{huge_digits}")).is_err());
     assert!(Onrc::parse(&huge_spaces).is_err());

@@ -237,6 +237,12 @@ fn eval_len_rules<T: ?Sized>(target: &T, rules: &[LenRule<T>], acc: &mut StageAc
     }
 }
 
+fn eval_slice_rule<T>(items: &[T], r: &LenRule<T>, acc: &mut StageAcc) {
+    for item in items {
+        check_opt_len((r.extract)(item), r.max_len, r.code, r.sub_id, r.bt, acc);
+    }
+}
+
 fn check_opt_len(
     val: Option<&str>,
     max: usize,
@@ -308,84 +314,63 @@ pub(super) fn check_lengths(inv: &Invoice, syntax: XmlSyntax, acc: &mut StageAcc
     if let Some(PaymentMeans::CreditTransfer(cts)) =
         inv.payment.as_ref().and_then(|p| p.means.as_ref())
     {
-        for ct in cts {
-            check_opt_len(
-                ct.account_name.as_deref(),
-                200,
-                "BR-RO-L200",
-                "BR-RO-L208",
-                "BT-85",
-                acc,
-            );
-        }
+        eval_slice_rule(
+            cts,
+            &rule("BR-RO-L200", "BR-RO-L208", "BT-85", 200, |ct| {
+                ct.account_name.as_deref()
+            }),
+            acc,
+        );
     }
 
-    for a in &inv.allowances {
-        check_opt_len(
-            a.reason.as_deref(),
-            100,
-            "BR-RO-L100",
-            "BR-RO-L1017",
-            "BT-97",
-            acc,
-        );
-    }
-    for c in &inv.charges {
-        check_opt_len(
-            c.reason.as_deref(),
-            100,
-            "BR-RO-L100",
-            "BR-RO-L1018",
-            "BT-104",
-            acc,
-        );
-    }
-    for vb in &inv.vat_breakdown {
-        check_opt_len(
-            vb.exemption_reason.as_deref(),
-            100,
-            "BR-RO-L100",
-            "BR-RO-L1019",
-            "BT-120",
-            acc,
-        );
-    }
+    eval_slice_rule(
+        &inv.allowances,
+        &rule("BR-RO-L100", "BR-RO-L1017", "BT-97", 100, |a| {
+            a.reason.as_deref()
+        }),
+        acc,
+    );
+    eval_slice_rule(
+        &inv.charges,
+        &rule("BR-RO-L100", "BR-RO-L1018", "BT-104", 100, |c| {
+            c.reason.as_deref()
+        }),
+        acc,
+    );
+    eval_slice_rule(
+        &inv.vat_breakdown,
+        &rule("BR-RO-L100", "BR-RO-L1019", "BT-120", 100, |vb| {
+            vb.exemption_reason.as_deref()
+        }),
+        acc,
+    );
     for att in &inv.attachments {
         eval_len_rules(att, SUPPORTING_DOC_LEN_RULES, acc);
     }
-    for pi in &inv.preceding_invoices {
-        check_opt_len(
-            Some(pi.reference.as_str()),
-            200,
-            "BR-RO-L200",
-            "BR-RO-L156",
-            "BT-25",
-            acc,
-        );
-    }
+    eval_slice_rule(
+        &inv.preceding_invoices,
+        &rule("BR-RO-L200", "BR-RO-L156", "BT-25", 200, |pi| {
+            Some(pi.reference.as_str())
+        }),
+        acc,
+    );
 
     for line in &inv.lines {
         eval_len_rules(line, LINE_LEN_RULES, acc);
-        for a in &line.allowances {
-            check_opt_len(
-                a.reason.as_deref(),
-                100,
-                "BR-RO-L100",
-                "BR-RO-L1022",
-                "BT-139",
-                acc,
-            );
-        }
-        for c in &line.charges {
-            check_opt_len(
-                c.reason.as_deref(),
-                100,
-                "BR-RO-L100",
-                "BR-RO-L1023",
-                "BT-144",
-                acc,
-            );
-        }
+        eval_slice_rule(
+            &line.allowances,
+            &rule("BR-RO-L100", "BR-RO-L1022", "BT-139", 100, |a| {
+                a.reason.as_deref()
+            }),
+            acc,
+        );
+        eval_slice_rule(
+            &line.charges,
+            &rule("BR-RO-L100", "BR-RO-L1023", "BT-144", 100, |c| {
+                c.reason.as_deref()
+            }),
+            acc,
+        );
         for attr in &line.item.attributes {
             eval_len_rules(attr, ITEM_ATTR_LEN_RULES, acc);
         }

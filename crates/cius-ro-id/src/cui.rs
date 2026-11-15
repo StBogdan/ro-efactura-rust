@@ -148,7 +148,8 @@ impl Cui {
         }
 
         if raw.len() > crate::MAX_ID_SCAN_CHARS {
-            return Err(CuiError::InvalidLength { len: count });
+            let reported = if count >= 2 { digits.len() + 1 } else { count };
+            return Err(CuiError::InvalidLength { len: reported });
         }
         Self::from_validated_digits(digits, count, has_ro_prefix)
     }

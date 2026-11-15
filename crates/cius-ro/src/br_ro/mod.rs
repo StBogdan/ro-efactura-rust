@@ -40,6 +40,7 @@ pub(super) const CII_UDT_NS: &str = "urn:un:unece:uncefact:data:standard:Unquali
 
 /// Outcome of evaluating ANAF `CIUS-RO 1.0.1` rules and `cius-ro-id` checksums on an XML document.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct BrRoOutcome {
     /// Engine stage summary (`anaf_cius_ro`).
     pub report: EngineReport,
@@ -61,7 +62,7 @@ pub struct BrRoOutcome {
 /// Returns [`XmlDecodeError`] if `bytes` contains invalid UTF-8 or malformed/truncated UTF-16.
 pub fn decode_xml_bytes(bytes: &[u8]) -> Result<Cow<'_, str>, XmlDecodeError> {
     if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return std::str::from_utf8(rest)
+        return ::core::str::from_utf8(rest)
             .map(Cow::Borrowed)
             .map_err(XmlDecodeError::InvalidUtf8AfterBom);
     }
@@ -86,7 +87,7 @@ pub fn decode_xml_bytes(bytes: &[u8]) -> Result<Cow<'_, str>, XmlDecodeError> {
             return Ok(Cow::Owned(decoded));
         }
     }
-    std::str::from_utf8(bytes)
+    ::core::str::from_utf8(bytes)
         .map(Cow::Borrowed)
         .map_err(XmlDecodeError::InvalidUtf8)
 }
