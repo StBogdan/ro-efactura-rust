@@ -10,14 +10,14 @@ env:
 
 jobs:
   msrv:
-    name: MSRV 1.88 Check
+    name: MSRV 1.89 Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.88.0
-      - name: Check workspace at MSRV 1.88
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - name: Check workspace at MSRV 1.89
         run: cargo check --workspace --all-features
-      - name: Check no_std cius-ro-id at MSRV 1.88
+      - name: Check no_std cius-ro-id at MSRV 1.89
         run: cargo check -p cius-ro-id --no-default-features
 
   test-and-lint:

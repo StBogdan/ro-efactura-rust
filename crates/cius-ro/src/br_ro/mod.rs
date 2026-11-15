@@ -74,11 +74,11 @@ pub fn decode_xml_bytes(bytes: &[u8]) -> Result<Cow<'_, str>, XmlDecodeError> {
             if rest.len() % 2 != 0 {
                 return Err(XmlDecodeError::TruncatedUtf16 { encoding });
             }
-            let units = rest.chunks_exact(2).map(|c| {
+            let units = rest.as_chunks::<2>().0.iter().copied().map(|pair| {
                 if is_be {
-                    u16::from_be_bytes([c[0], c[1]])
+                    u16::from_be_bytes(pair)
                 } else {
-                    u16::from_le_bytes([c[0], c[1]])
+                    u16::from_le_bytes(pair)
                 }
             });
             let decoded: String = char::decode_utf16(units)

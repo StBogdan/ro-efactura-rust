@@ -347,9 +347,8 @@ pub fn is_onrc_candidate(raw: &str) -> bool {
     let (Some(c0), Some(c1)) = (non_ws.next(), non_ws.next()) else {
         return false;
     };
-    u8::try_from(c0).ok().is_some_and(|b| {
-        OnrcRegister::from_ascii(b).is_some() && (c1.is_ascii_digit() || c1 == '/')
-    })
+    u8::try_from(c0)
+        .is_ok_and(|b| OnrcRegister::from_ascii(b).is_some() && (c1.is_ascii_digit() || c1 == '/'))
 }
 
 fn parse_classic_year_or_date(segment: &str) -> Result<&str, OnrcError> {
