@@ -3,11 +3,12 @@
 
 #[cfg(feature = "svrl")]
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 use en16931::{Severity as EnSeverity, profiles};
 use en16931_formats::{Policy, report::Report};
 
-use crate::stage_acc::{StageAcc, StageFinding};
+use crate::stage_acc::{StageAcc, StageFinding, tr, tr_fmt};
 use crate::types::{
     CIUS_RO_CUSTOMIZATION_ID, DocumentIdentity, EngineId, EngineReport, Locale, Severity,
     ValidateOptions, Violation,
@@ -63,9 +64,14 @@ pub(crate) fn evaluate_en16931(
         });
 
     let mut acc = StageAcc::new(ENGINE_ID, ENGINE_NAME, ENGINE_VERSION, opts.locale);
-    collect_en_report(&received.report_declared, &mut acc, false);
+    collect_en_report(&received.report_declared, &mut acc, None);
     if let Some(req_rep) = &received.report_required {
-        collect_en_report(req_rep, &mut acc, true);
+        let mut seen: HashSet<(String, String)> = acc
+            .violations()
+            .iter()
+            .map(|v| (v.code.clone(), v.location.clone().unwrap_or_default()))
+            .collect();
+        collect_en_report(req_rep, &mut acc, Some(&mut seen));
     }
 
     if let Some((code, message, actual)) = check_bt24_declaration(
@@ -100,34 +106,42 @@ fn check_bt24_declaration(
 ) -> Option<(&'static str, String, Option<String>)> {
     match declared {
         Some(profiles::Declaration::Unknown(opt_id)) if !is_cius_ro && !run_cius_ro_rules => {
-            let msg = match (opt_id, locale) {
-                (Some(v), Locale::En) => format!(
-                    "Specification identifier (BT-24) '{v}' is not a recognized EN 16931 / CIUS-RO URI."
-                ),
-                (Some(v), Locale::Ro) => format!(
-                    "Identificatorul specificației (BT-24) '{v}' nu este un profil EN 16931 / CIUS-RO recunoscut."
-                ),
-                (None, Locale::En) => "Specification identifier (BT-24) is missing.".to_owned(),
-                (None, Locale::Ro) => "Identificatorul specificației (BT-24) lipsește.".to_owned(),
-            };
+            let msg = opt_id.as_deref().map_or_else(
+                || {
+                    tr(
+                        locale,
+                        "Specification identifier (BT-24) is missing.",
+                        "Identificatorul specificației (BT-24) lipsește.",
+                    )
+                    .to_owned()
+                },
+                |v| {
+                    tr_fmt!(
+                        locale,
+                        "Specification identifier (BT-24) '{v}' is not a recognized EN 16931 / CIUS-RO URI.",
+                        "Identificatorul specificației (BT-24) '{v}' nu este un profil EN 16931 / CIUS-RO recunoscut."
+                    )
+                },
+            );
             Some(("EN16931-BT24-PROFILE", msg, opt_id.clone()))
         }
         Some(profiles::Declaration::WrongProcess(v)) => {
-            let msg = match locale {
-                Locale::En => format!(
-                    "Specification identifier (BT-24) '{v}' belongs to a non-invoice process."
-                ),
-                Locale::Ro => format!(
-                    "Identificatorul specificației (BT-24) '{v}' aparține unui alt proces decât facturarea."
-                ),
-            };
+            let msg = tr_fmt!(
+                locale,
+                "Specification identifier (BT-24) '{v}' belongs to a non-invoice process.",
+                "Identificatorul specificației (BT-24) '{v}' aparține unui alt proces decât facturarea."
+            );
             Some(("EN16931-BT24-PROCESS", msg, Some(v.clone())))
         }
         _ => None,
     }
 }
 
-fn collect_en_report(report: &Report, acc: &mut StageAcc, dedup: bool) {
+fn collect_en_report(
+    report: &Report,
+    acc: &mut StageAcc,
+    mut seen: Option<&mut HashSet<(String, String)>>,
+) {
     for entry in report.entries() {
         let sev = match entry.level() {
             EnSeverity::Fatal => Severity::Fatal,
@@ -138,11 +152,8 @@ fn collect_en_report(report: &Report, acc: &mut StageAcc, dedup: bool) {
             .rule
             .clone()
             .unwrap_or_else(|| format!("EN16931-{}", entry.kind.as_str().to_ascii_uppercase()));
-        if dedup
-            && acc
-                .violations()
-                .iter()
-                .any(|v| v.code == code && v.location.as_deref() == Some(entry.path.as_str()))
+        if let Some(s) = seen.as_deref_mut()
+            && !s.insert((code.clone(), entry.path.clone()))
         {
             continue;
         }
@@ -157,16 +168,13 @@ fn collect_en_report(report: &Report, acc: &mut StageAcc, dedup: bool) {
     }
 
     if let Some(sem_rep) = &report.semantic.report {
-        if !dedup {
+        if seen.is_none() {
             acc.add_evaluated(sem_rep.rules_checked());
         }
         for finding in sem_rep.findings() {
             let loc = finding.path.to_string();
-            if dedup
-                && acc
-                    .violations()
-                    .iter()
-                    .any(|v| v.code == finding.rule && v.location.as_deref() == Some(loc.as_str()))
+            if let Some(s) = seen.as_deref_mut()
+                && !s.insert((finding.rule.clone(), loc.clone()))
             {
                 continue;
             }

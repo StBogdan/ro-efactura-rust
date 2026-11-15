@@ -2,34 +2,11 @@
 
 use core::fmt;
 
-pub use cius_ro_id::{Locale, ParseLocaleError};
+pub use cius_ro_id::{Locale, LocalizedError as LocalizedDisplay, LocalizedFmt, ParseLocaleError};
 
 /// Official ANAF `RO e-Factura` (`CIUS-RO 1.0.1`) `BT-24` Specification Identifier URI.
 pub const CIUS_RO_CUSTOMIZATION_ID: &str =
     "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1";
-
-pub(crate) trait LocalizedFmt {
-    fn fmt_locale(&self, f: &mut fmt::Formatter<'_>, locale: Locale) -> fmt::Result;
-}
-
-/// Zero-allocation [`fmt::Display`] adapter formatting a `cius-ro` error in a chosen [`Locale`].
-#[derive(Debug, Clone, Copy)]
-pub struct LocalizedDisplay<'a, E: ?Sized> {
-    err: &'a E,
-    locale: Locale,
-}
-
-impl<'a, E: ?Sized> LocalizedDisplay<'a, E> {
-    pub(crate) const fn new(err: &'a E, locale: Locale) -> Self {
-        Self { err, locale }
-    }
-}
-
-impl<E: LocalizedFmt + ?Sized> fmt::Display for LocalizedDisplay<'_, E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.err.fmt_locale(f, self.locale)
-    }
-}
 
 macro_rules! impl_str_enum {
     ($ty:ty, $doc:literal, { $($variant:pat => $label:literal),+ $(,)? }) => {

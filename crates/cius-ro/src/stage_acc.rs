@@ -96,7 +96,7 @@ impl<'a> StageFinding<'a> {
         self
     }
 
-    fn into_violation(self, engine: EngineId) -> Violation {
+    pub(crate) fn into_violation(self, engine: EngineId) -> Violation {
         Violation {
             code: self.code.to_owned(),
             rule_sub_id: self.sub_id.map(str::to_owned),
@@ -111,6 +111,59 @@ impl<'a> StageFinding<'a> {
         }
     }
 }
+
+/// Selects `en` or `ro` according to `locale`.
+#[inline]
+pub(crate) const fn tr<'a>(locale: Locale, en: &'a str, ro: &'a str) -> &'a str {
+    match locale {
+        Locale::En => en,
+        Locale::Ro => ro,
+    }
+}
+
+/// Trait implemented by [`Locale`] and [`StageAcc`] to support [`tr_fmt!`].
+pub(crate) trait HasLocale {
+    fn locale_val(&self) -> Locale;
+}
+
+impl HasLocale for Locale {
+    #[inline]
+    fn locale_val(&self) -> Locale {
+        *self
+    }
+}
+
+impl HasLocale for StageAcc {
+    #[inline]
+    fn locale_val(&self) -> Locale {
+        self.locale
+    }
+}
+
+impl<T: HasLocale + ?Sized> HasLocale for &T {
+    #[inline]
+    fn locale_val(&self) -> Locale {
+        (**self).locale_val()
+    }
+}
+
+impl<T: HasLocale + ?Sized> HasLocale for &mut T {
+    #[inline]
+    fn locale_val(&self) -> Locale {
+        (**self).locale_val()
+    }
+}
+
+/// Formats a localized `String` in [`Locale::En`] or [`Locale::Ro`] without verbose `match` blocks.
+macro_rules! tr_fmt {
+    ($loc:expr, $en:literal, $ro:literal $(, $($arg:tt)*)?) => {
+        match $crate::stage_acc::HasLocale::locale_val(&$loc) {
+            $crate::types::Locale::En => format!($en $(, $($arg)*)?),
+            $crate::types::Locale::Ro => format!($ro $(, $($arg)*)?),
+        }
+    };
+}
+pub(crate) use tr_fmt;
 
 /// Shared per-stage rule counter and [`Violation`] collector across `xsd`, `semantic`, `br_ro`,
 /// and `pdfa3`.
