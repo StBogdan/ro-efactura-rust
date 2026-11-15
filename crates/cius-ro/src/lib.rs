@@ -361,10 +361,4 @@ mod readme_doctests {
 
     #[doc = include_str!("../README.ro.md")]
     struct ReadmeRo;
-
-    #[doc = include_str!("../../../README.md")]
-    struct WorkspaceReadmeEn;
-
-    #[doc = include_str!("../../../README.ro.md")]
-    struct WorkspaceReadmeRo;
 }

@@ -1,6 +1,6 @@
 # cius-ro-id
 
-[**Română (`README.ro.md`)**](./README.ro.md) · [**GitHub Repository**](https://github.com/StBogdan/ro-efactura-rust)
+[**Română (`README.ro.md`)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/crates/cius-ro-id/README.ro.md) · [**GitHub Repository**](https://github.com/StBogdan/ro-efactura-rust)
 
 Parse, normalize, and verify Romanian fiscal, banking, and administrative identifiers in Rust.
 

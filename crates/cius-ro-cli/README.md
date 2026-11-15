@@ -1,6 +1,6 @@
 # cius-ro-cli
 
-[**Română (`README.ro.md`)**](./README.ro.md) · [**GitHub Repository**](https://github.com/StBogdan/ro-efactura-rust)
+[**Română (`README.ro.md`)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/crates/cius-ro-cli/README.ro.md) · [**GitHub Repository**](https://github.com/StBogdan/ro-efactura-rust)
 
 Command-line validator (`cius-ro`) for Romanian **ANAF `RO e-Factura`** (`CIUS-RO 1.0.1`) invoices and fiscal identifiers.
 

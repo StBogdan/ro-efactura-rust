@@ -75,13 +75,10 @@ fn cli_check_invalid_invoice_exits_one_in_json_svrl_and_sarif() {
                 let v: serde_json::Value =
                     serde_json::from_str(&stdout).expect("valid SARIF v2.1.0 JSON");
                 assert_eq!(v["version"], "2.1.0");
-                assert!(!v["runs"][0]["results"].as_array().unwrap().is_empty());
-                assert!(
-                    !v["runs"][0]["tool"]["driver"]["rules"]
-                        .as_array()
-                        .unwrap()
-                        .is_empty()
-                );
+                let results = v["runs"][0]["results"].as_array().unwrap();
+                assert!(results.iter().any(|r| r["ruleId"] == "BR-RO-110"));
+                let rules = v["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
+                assert!(rules.iter().any(|r| r["id"] == "BR-RO-110"));
             }
             _ => unreachable!(),
         }

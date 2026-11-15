@@ -6,12 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 keywords = ["efactura", "cius-ro", "anaf", "en16931", "ubl"]
 categories = ["parser-implementations", "encoding", "finance", "localization"]
-exclude = ["tests/fixtures/**"]
+exclude = ["tests/**"]
 
 [lints]
 workspace = true

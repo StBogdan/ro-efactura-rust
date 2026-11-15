@@ -9,6 +9,7 @@ use crate::types::{Locale, RuleCategory, Severity};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[non_exhaustive]
 pub struct RuleDescriptor {
     /// Canonical rule code (e.g. `"BR-RO-100"`).
     pub code: &'static str,
@@ -79,6 +80,7 @@ impl RuleDescriptor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+#[non_exhaustive]
 pub struct RuleView<'a> {
     /// Canonical rule code (e.g. `"BR-RO-100"`).
     pub code: &'a str,

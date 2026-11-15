@@ -1,6 +1,6 @@
 # cius-ro-wasm
 
-[**Română (`README.ro.md`)**](./README.ro.md) · [**GitHub Repository**](https://github.com/StBogdan/ro-efactura-rust)
+[**Română (`README.ro.md`)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/crates/cius-ro-wasm/README.ro.md) · [**GitHub Repository**](https://github.com/StBogdan/ro-efactura-rust)
 
 WebAssembly bindings (`wasm-bindgen`) for [`cius-ro`](https://crates.io/crates/cius-ro) and [`cius-ro-id`](https://crates.io/crates/cius-ro-id).
 

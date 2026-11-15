@@ -1,6 +1,6 @@
 # cius-ro
 
-[**English (`README.md`)**](./README.md) · [**Catalog Reguli (RO)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/docs/RULES.ro.md) · [**Rule Reference (EN)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/docs/RULES.en.md)
+[**English (`README.md`)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/crates/cius-ro/README.md) · [**Catalog Reguli (RO)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/docs/RULES.ro.md) · [**Rule Reference (EN)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/docs/RULES.en.md)
 
 Validator în Rust pentru facturile electronice **ANAF `RO e-Factura`** (**`CIUS-RO 1.0.1`** / `ROeFactura v1.0.9`).
 

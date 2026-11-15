@@ -1,6 +1,6 @@
 # cius-ro-wasm
 
-[**English (`README.md`)**](./README.md) · [**Documentația principală**](https://github.com/StBogdan/ro-efactura-rust/blob/main/README.ro.md)
+[**English (`README.md`)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/crates/cius-ro-wasm/README.md) · [**Documentația principală**](https://github.com/StBogdan/ro-efactura-rust/blob/main/README.ro.md)
 
 Pachet WebAssembly (`wasm-bindgen`) pentru [`cius-ro`](https://crates.io/crates/cius-ro) și [`cius-ro-id`](https://crates.io/crates/cius-ro-id).
 

@@ -1,6 +1,6 @@
 # cius-ro-id
 
-[**English (`README.md`)**](./README.md) · [**Documentația principală**](https://github.com/StBogdan/ro-efactura-rust/blob/main/README.ro.md)
+[**English (`README.md`)**](https://github.com/StBogdan/ro-efactura-rust/blob/main/crates/cius-ro-id/README.md) · [**Documentația principală**](https://github.com/StBogdan/ro-efactura-rust/blob/main/README.ro.md)
 
 Bibliotecă în Rust pentru parsarea, normalizarea și validarea codurilor fiscale, bancare și administrative din România.
 

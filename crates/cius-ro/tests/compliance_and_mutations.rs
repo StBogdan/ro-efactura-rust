@@ -992,7 +992,12 @@ fn cii_d16b_notes_length_tax_rep_and_namespace_strictness() {
             .any(|v| v.code == "XSD-UNKNOWN-ROOT")
     );
     #[cfg(not(feature = "xsd"))]
-    assert!(!rep_wrong.violations.is_empty());
+    assert!(
+        rep_wrong
+            .violations
+            .iter()
+            .any(|v| v.code == "EN16931-UNREADABLE" || v.code == "BR-RO-UNKNOWN-ROOT")
+    );
 }
 
 #[test]
